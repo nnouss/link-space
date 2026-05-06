@@ -1221,6 +1221,9 @@ describe('background navigation collection', () => {
         })
       })
     });
+
+    const savedData = localStorageMock.set.mock.calls[0][0].linkSpaceData as LinkSpaceData;
+    expect(savedData.sessions).not.toHaveProperty('session-2');
   });
 
   it('starts an untracked Google search tab as a normal browser root', async () => {
