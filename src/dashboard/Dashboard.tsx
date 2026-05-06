@@ -94,7 +94,7 @@ export function Dashboard() {
       const importedData = importLinkSpaceData(await file.text());
       const response = await sendRuntimeMessage({ type: 'IMPORT_DATA', payload: importedData });
 
-      if (!response.ok) {
+      if (!response?.ok) {
         setError('가져온 데이터를 저장하지 못했습니다.');
         return;
       }

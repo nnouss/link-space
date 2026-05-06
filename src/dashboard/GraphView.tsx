@@ -9,7 +9,7 @@ interface GraphViewProps {
   onSelectNode: (node: PageNode) => void;
 }
 
-interface GraphNode {
+export interface GraphNode {
   id: string;
   page: PageNode;
   title: string;
@@ -17,7 +17,7 @@ interface GraphNode {
   value: number;
 }
 
-interface GraphLink {
+export interface GraphLink {
   id: string;
   source: string;
   target: string;
@@ -29,70 +29,73 @@ const BACKGROUND_COLOR = '#111315';
 export function GraphView({ session, nodes, edges, onSelectNode }: GraphViewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const size = useElementSize(containerRef);
-
-  const graphData = useMemo(() => {
-    if (!session) {
-      return { nodes: [] as GraphNode[], links: [] as GraphLink[] };
-    }
-
-    const graphNodes = session.nodeIds
-      .map((nodeId) => nodes[nodeId])
-      .filter((node): node is PageNode => Boolean(node))
-      .map((node) => ({
-        id: node.id,
-        page: node,
-        title: node.title,
-        color: NODE_COLORS[node.depth % NODE_COLORS.length],
-        value: nodeValue(node)
-      }));
-
-    const nodeIds = new Set(graphNodes.map((node) => node.id));
-    const graphLinks = session.edgeIds
-      .map((edgeId) => edges[edgeId])
-      .filter((edge): edge is NavigationEdge => {
-        return Boolean(edge && nodeIds.has(edge.fromNodeId) && nodeIds.has(edge.toNodeId));
-      })
-      .map((edge) => ({
-        id: edge.id,
-        source: edge.fromNodeId,
-        target: edge.toNodeId
-      }));
-
-    return { nodes: graphNodes, links: graphLinks };
-  }, [edges, nodes, session]);
-
-  if (!session) {
-    return (
-      <div ref={containerRef} style={emptyStateStyle}>
-        <p style={{ margin: 0 }}>세션을 선택하세요.</p>
-      </div>
-    );
-  }
+  const graphData = useMemo(() => toGraphData(session, nodes, edges), [edges, nodes, session]);
 
   return (
     <div ref={containerRef} style={graphContainerStyle}>
-      <ForceGraph3D
-        graphData={graphData}
-        width={size.width}
-        height={size.height}
-        backgroundColor={BACKGROUND_COLOR}
-        nodeId="id"
-        linkSource="source"
-        linkTarget="target"
-        nodeLabel="title"
-        nodeVal="value"
-        nodeColor="color"
-        nodeRelSize={5}
-        nodeResolution={24}
-        linkColor={() => '#4b5563'}
-        linkWidth={0.35}
-        linkOpacity={0.42}
-        showNavInfo={false}
-        enableNodeDrag={false}
-        onNodeClick={(node) => onSelectNode(node.page)}
-      />
+      {!session ? (
+        <div style={emptyStateStyle}>
+          <p style={{ margin: 0 }}>세션을 선택하세요.</p>
+        </div>
+      ) : (
+        <ForceGraph3D
+          graphData={graphData}
+          width={size.width}
+          height={size.height}
+          backgroundColor={BACKGROUND_COLOR}
+          nodeId="id"
+          linkSource="source"
+          linkTarget="target"
+          nodeLabel="title"
+          nodeVal="value"
+          nodeColor="color"
+          nodeRelSize={5}
+          nodeResolution={24}
+          linkColor={() => '#4b5563'}
+          linkWidth={0.35}
+          linkOpacity={0.42}
+          showNavInfo={false}
+          enableNodeDrag={false}
+          onNodeClick={(node) => onSelectNode(node.page)}
+        />
+      )}
     </div>
   );
+}
+
+export function toGraphData(
+  session: SearchSession | null,
+  nodes: Record<string, PageNode>,
+  edges: Record<string, NavigationEdge>
+): { nodes: GraphNode[]; links: GraphLink[] } {
+  if (!session) {
+    return { nodes: [], links: [] };
+  }
+
+  const graphNodes = session.nodeIds
+    .map((nodeId) => nodes[nodeId])
+    .filter((node): node is PageNode => Boolean(node))
+    .map((node) => ({
+      id: node.id,
+      page: node,
+      title: node.title,
+      color: NODE_COLORS[node.depth % NODE_COLORS.length],
+      value: nodeValue(node)
+    }));
+
+  const nodeIds = new Set(graphNodes.map((node) => node.id));
+  const graphLinks = session.edgeIds
+    .map((edgeId) => edges[edgeId])
+    .filter((edge): edge is NavigationEdge => {
+      return Boolean(edge && nodeIds.has(edge.fromNodeId) && nodeIds.has(edge.toNodeId));
+    })
+    .map((edge) => ({
+      id: edge.id,
+      source: edge.fromNodeId,
+      target: edge.toNodeId
+    }));
+
+  return { nodes: graphNodes, links: graphLinks };
 }
 
 function nodeValue(node: PageNode): number {
