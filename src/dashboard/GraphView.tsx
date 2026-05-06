@@ -24,8 +24,14 @@ export interface GraphLink {
   target: string;
 }
 
-const NODE_COLORS = ['#49d6a0', '#60a5fa', '#c084fc', '#fbbf24', '#fb7185'];
-const BACKGROUND_COLOR = '#0f1216';
+const NODE_COLORS = [
+  'oklch(75% 0.11 166)',
+  'oklch(73% 0.1 215)',
+  'oklch(72% 0.11 252)',
+  'oklch(78% 0.12 82)',
+  'oklch(72% 0.1 24)'
+];
+const BACKGROUND_COLOR = 'oklch(16% 0.012 225)';
 
 export function GraphView({ session, nodes, edges, onSelectNode }: GraphViewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -36,7 +42,7 @@ export function GraphView({ session, nodes, edges, onSelectNode }: GraphViewProp
     <div ref={containerRef} style={graphContainerStyle}>
       {!session ? (
         <div style={emptyStateStyle}>
-          <p style={{ margin: 0 }}>왼쪽에서 세션을 선택하세요.</p>
+          <p style={{ margin: 0 }}>Select a session to inspect its graph.</p>
         </div>
       ) : (
         <ForceGraph3D
@@ -52,7 +58,7 @@ export function GraphView({ session, nodes, edges, onSelectNode }: GraphViewProp
           nodeColor="color"
           nodeRelSize={5}
           nodeResolution={24}
-          linkColor={() => '#667085'}
+          linkColor={() => 'oklch(65% 0.025 230)'}
           linkWidth={0.4}
           linkOpacity={0.46}
           showNavInfo={false}
@@ -148,7 +154,7 @@ const graphContainerStyle = {
 const emptyStateStyle = {
   alignItems: 'center',
   background: BACKGROUND_COLOR,
-  color: '#dbe4f0',
+  color: 'oklch(82% 0.018 225)',
   display: 'flex',
   fontFamily:
     'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',

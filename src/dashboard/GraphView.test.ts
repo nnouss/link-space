@@ -65,7 +65,7 @@ describe('GraphView graph data', () => {
       id: 'deep-node',
       page: node,
       title: 'Page deep-node',
-      color: '#c084fc'
+      color: 'oklch(72% 0.11 252)'
     });
     expect(graphData.nodes[0].value).toBeCloseTo(5.8);
   });
