@@ -84,6 +84,34 @@ describe('Popup', () => {
       type: 'DELETE_ALL_SESSIONS'
     });
   });
+
+  it('falls back to single-session deletion when popup bulk deletion is not supported yet', async () => {
+    const data = createData(false);
+    const sendMessage = chrome.runtime.sendMessage as unknown as {
+      mockResolvedValueOnce: (value: unknown) => typeof sendMessage;
+    };
+    sendMessage
+      .mockResolvedValueOnce({ ok: true, data })
+      .mockResolvedValueOnce({ ok: false, error: 'Unsupported message' })
+      .mockResolvedValueOnce({ ok: true, data: { ...data, sessions: {}, nodes: {}, edges: {} } });
+
+    render(<Popup />);
+
+    fireEvent.click(await screen.findByLabelText('세션 선택: impeccable'));
+    fireEvent.click(screen.getByLabelText('선택 세션 삭제'));
+    fireEvent.click(screen.getByLabelText('선택 세션 삭제 확인'));
+
+    await waitFor(() => {
+      expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({
+        type: 'DELETE_SESSION',
+        sessionId: 'session-1'
+      });
+    });
+    expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({
+      type: 'DELETE_SESSIONS',
+      sessionIds: ['session-1']
+    });
+  });
 });
 
 function createData(recordingPaused: boolean): LinkSpaceData {

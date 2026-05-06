@@ -107,10 +107,20 @@ export function Dashboard() {
     setError(null);
 
     try {
-      const response = await sendRuntimeMessage({
+      let response = await sendRuntimeMessage({
         type: 'DELETE_SESSIONS',
         sessionIds: selectedSessionIds
       });
+
+      if (!response?.ok) {
+        for (const sessionId of selectedSessionIds) {
+          response = await sendRuntimeMessage({ type: 'DELETE_SESSION', sessionId });
+
+          if (!response?.ok) {
+            break;
+          }
+        }
+      }
 
       if (!response?.ok) {
         setError('선택한 세션을 삭제하지 못했습니다. 다시 시도하세요.');

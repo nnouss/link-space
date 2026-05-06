@@ -82,10 +82,20 @@ export function Popup() {
     setError(null);
 
     try {
-      const response = await sendRuntimeMessage({
+      let response = await sendRuntimeMessage({
         type: 'DELETE_SESSIONS',
         sessionIds: selectedSessionIds
       });
+
+      if (!response?.ok) {
+        for (const sessionId of selectedSessionIds) {
+          response = await sendRuntimeMessage({ type: 'DELETE_SESSION', sessionId });
+
+          if (!response?.ok) {
+            break;
+          }
+        }
+      }
 
       if (response.ok) {
         applyDeletedData(response.data);
