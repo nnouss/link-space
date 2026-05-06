@@ -223,10 +223,7 @@ export function Dashboard() {
 
       <aside style={{ ...drawerStyle, transform: selectedNode ? 'translateX(0)' : 'translateX(100%)' }}>
         <div style={drawerHeaderStyle}>
-          <div>
-            <span style={eyebrowStyle}>노드 상세</span>
-            <h2 style={drawerTitleStyle}>{selectedNode?.domain ?? '선택된 노드 없음'}</h2>
-          </div>
+          <span style={eyebrowStyle}>노드 상세</span>
           <button type="button" aria-label="노드 상세 닫기" onClick={() => setSelectedNode(null)} style={iconButtonStyle}>
             <X size={18} aria-hidden="true" />
           </button>
@@ -235,14 +232,18 @@ export function Dashboard() {
         {selectedNode ? (
           <div style={drawerContentStyle}>
             <section style={nodeSummaryStyle}>
-              <span style={domainPillStyle}>{selectedNode.domain}</span>
               <h3 style={nodeTitleStyle}>{selectedNode.title || selectedNode.url}</h3>
+              <div style={nodeMetaLineStyle}>
+                <span style={nodeMetaLabelStyle}>도메인</span>
+                <span style={nodeMetaValueStyle}>{selectedNode.domain}</span>
+              </div>
               <a href={selectedNode.url} target="_blank" rel="noreferrer" style={nodeUrlStyle}>
                 <ExternalLink size={14} aria-hidden="true" />
                 {selectedNode.url}
               </a>
             </section>
 
+            <h3 style={detailSectionTitleStyle}>기본 정보</h3>
             <dl style={detailsListStyle}>
               <DetailRow label="깊이" value={String(selectedNode.depth)} />
               <DetailRow label="방문 횟수" value={String(selectedNode.visitCount)} />
@@ -557,7 +558,7 @@ const drawerBackdropStyle = {
 const drawerStyle = {
   background: surfaceColors.rail,
   bottom: 0,
-  boxShadow: '-24px 0 60px oklch(10% 0.01 225 / 45%)',
+  boxShadow: '-18px 0 48px oklch(10% 0.01 225 / 34%)',
   display: 'grid',
   gridTemplateRows: 'auto minmax(0, 1fr)',
   maxWidth: 'calc(100vw - 280px)',
@@ -574,15 +575,8 @@ const drawerHeaderStyle = {
   alignItems: 'center',
   display: 'flex',
   justifyContent: 'space-between',
-  padding: '20px 20px 16px'
-} satisfies CSSProperties;
-
-const drawerTitleStyle = {
-  color: surfaceColors.text,
-  fontSize: 20,
-  lineHeight: 1.2,
-  margin: '4px 0 0',
-  overflowWrap: 'anywhere'
+  minHeight: 58,
+  padding: '0 18px'
 } satisfies CSSProperties;
 
 const iconButtonStyle = {
@@ -600,33 +594,50 @@ const iconButtonStyle = {
 
 const drawerContentStyle = {
   display: 'grid',
-  gap: 16,
+  alignContent: 'start',
+  gap: 18,
   overflowY: 'auto',
-  padding: 20
+  padding: '12px 20px 22px'
 } satisfies CSSProperties;
 
 const nodeSummaryStyle = {
+  background: 'oklch(17% 0.012 225)',
+  borderRadius: 8,
   display: 'grid',
   gap: 12,
-  paddingBottom: 16
-} satisfies CSSProperties;
-
-const domainPillStyle = {
-  background: 'oklch(26% 0.04 166)',
-  border: '1px solid oklch(47% 0.08 166)',
-  borderRadius: 999,
-  color: 'oklch(86% 0.08 166)',
-  fontSize: 12,
-  justifySelf: 'start',
-  padding: '3px 9px'
+  padding: '16px 16px 15px'
 } satisfies CSSProperties;
 
 const nodeTitleStyle = {
   color: surfaceColors.text,
-  fontSize: 18,
-  lineHeight: 1.35,
+  fontSize: 19,
+  lineHeight: 1.32,
   margin: 0,
   overflowWrap: 'anywhere'
+} satisfies CSSProperties;
+
+const nodeMetaLineStyle = {
+  alignItems: 'center',
+  display: 'flex',
+  gap: 8,
+  minWidth: 0
+} satisfies CSSProperties;
+
+const nodeMetaLabelStyle = {
+  color: surfaceColors.dim,
+  flex: '0 0 auto',
+  fontSize: 12,
+  fontWeight: 800
+} satisfies CSSProperties;
+
+const nodeMetaValueStyle = {
+  color: 'oklch(79% 0.08 166)',
+  fontSize: 13,
+  fontWeight: 700,
+  minWidth: 0,
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap'
 } satisfies CSSProperties;
 
 const nodeUrlStyle = {
@@ -635,23 +646,37 @@ const nodeUrlStyle = {
   display: 'inline-flex',
   fontSize: 13,
   gap: 6,
-  lineHeight: 1.45,
+  lineHeight: 1.4,
+  minWidth: 0,
   overflowWrap: 'anywhere',
   textDecoration: 'none'
 } satisfies CSSProperties;
 
+const detailSectionTitleStyle = {
+  color: surfaceColors.muted,
+  fontSize: 12,
+  fontWeight: 900,
+  letterSpacing: 0,
+  margin: '2px 0 -6px',
+  textTransform: 'uppercase'
+} satisfies CSSProperties;
+
 const detailsListStyle = {
   display: 'grid',
-  gap: 8,
+  background: 'oklch(17% 0.012 225)',
+  borderRadius: 8,
+  gap: 0,
   margin: 0
 } satisfies CSSProperties;
 
 const detailRowStyle = {
+  alignItems: 'start',
   borderBottom: '1px solid oklch(24% 0.015 225)',
   display: 'grid',
-  gap: 5,
+  gap: 14,
+  gridTemplateColumns: '86px minmax(0, 1fr)',
   minWidth: 0,
-  padding: '10px 0'
+  padding: '13px 16px'
 } satisfies CSSProperties;
 
 const detailLabelStyle = {
@@ -659,7 +684,7 @@ const detailLabelStyle = {
   fontSize: 12,
   fontWeight: 800,
   margin: 0,
-  textTransform: 'uppercase'
+  paddingTop: 1
 } satisfies CSSProperties;
 
 const detailValueStyle = {

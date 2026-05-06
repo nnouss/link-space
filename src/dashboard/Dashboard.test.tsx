@@ -1,10 +1,14 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { LinkSpaceData } from '../shared/types';
 import { Dashboard } from './Dashboard';
 
 vi.mock('react-force-graph-3d', () => ({
-  default: () => <div data-testid="force-graph-3d" />
+  default: ({ graphData, onNodeClick }: { graphData: { nodes: Array<{ page: unknown }> }; onNodeClick: (node: { page: unknown }) => void }) => (
+    <button type="button" data-testid="graph-node" onClick={() => onNodeClick(graphData.nodes[0])}>
+      graph node
+    </button>
+  )
 }));
 
 class ResizeObserverMock {
@@ -39,6 +43,29 @@ describe('Dashboard', () => {
     await waitFor(() => {
       expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({ type: 'GET_DATA' });
     });
+  });
+
+  it('shows a compact Korean node detail panel after selecting a graph node', async () => {
+    const data = createData();
+    const sendMessage = chrome.runtime.sendMessage as unknown as {
+      mockResolvedValueOnce: (value: unknown) => void;
+    };
+    sendMessage.mockResolvedValueOnce({ ok: true, data });
+
+    render(<Dashboard />);
+
+    await screen.findByText('검색 경로 분석');
+    fireEvent.click(screen.getByTestId('graph-node'));
+
+    expect(screen.getByText('노드 상세')).toBeTruthy();
+    expect(screen.getByText('Example Page')).toBeTruthy();
+    expect(screen.getByText('example.com')).toBeTruthy();
+    expect(screen.getByText('기본 정보')).toBeTruthy();
+    expect(screen.getByText('깊이')).toBeTruthy();
+    expect(screen.getByText('방문 횟수')).toBeTruthy();
+    expect(screen.getByText('체류 시간')).toBeTruthy();
+    expect(screen.getByText('방문 시각')).toBeTruthy();
+    expect(screen.getByText('이전 URL')).toBeTruthy();
   });
 });
 
