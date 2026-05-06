@@ -1,0 +1,51 @@
+export type SearchEngine = 'google';
+export type SessionStatus = 'active' | 'ended';
+
+export interface SearchSession {
+  id: string;
+  query: string;
+  searchEngine: SearchEngine;
+  startedAt: string;
+  endedAt?: string;
+  lastActivityAt: string;
+  status: SessionStatus;
+  rootNodeId: string;
+  nodeIds: string[];
+  edgeIds: string[];
+  tabId?: number;
+}
+
+export interface PageNode {
+  id: string;
+  sessionId: string;
+  url: string;
+  title: string;
+  domain: string;
+  visitedAt: string;
+  fromUrl?: string;
+  dwellTime: number;
+  visitCount: number;
+  depth: number;
+  isSearchResultClick: boolean;
+}
+
+export interface NavigationEdge {
+  id: string;
+  sessionId: string;
+  fromNodeId: string;
+  toNodeId: string;
+  createdAt: string;
+  type: 'navigation';
+}
+
+export interface Settings {
+  recordingPaused: boolean;
+  sessionTimeoutMinutes: number;
+}
+
+export interface LinkSpaceData {
+  sessions: Record<string, SearchSession>;
+  nodes: Record<string, PageNode>;
+  edges: Record<string, NavigationEdge>;
+  settings: Settings;
+}
