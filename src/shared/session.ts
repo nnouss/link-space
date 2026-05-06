@@ -6,6 +6,13 @@ interface CreateSearchSessionInput {
   now: string;
 }
 
+interface CreateBrowserSessionInput {
+  url: string;
+  title: string;
+  tabId: number;
+  now: string;
+}
+
 interface AddPageVisitInput {
   sessionId: string;
   fromNodeId: string;
@@ -35,6 +42,54 @@ export function createSearchSession(
   const session: SearchSession = {
     id: sessionId,
     query: input.query,
+    searchEngine: 'google',
+    startedAt: input.now,
+    lastActivityAt: input.now,
+    status: 'active',
+    rootNodeId,
+    currentNodeId: rootNodeId,
+    nodeIds: [rootNodeId],
+    edgeIds: [],
+    tabId: input.tabId
+  };
+
+  return {
+    data: {
+      ...data,
+      sessions: {
+        ...data.sessions,
+        [sessionId]: session
+      },
+      nodes: {
+        ...data.nodes,
+        [rootNodeId]: rootNode
+      }
+    },
+    sessionId
+  };
+}
+
+export function createBrowserSession(
+  data: LinkSpaceData,
+  input: CreateBrowserSessionInput
+): { data: LinkSpaceData; sessionId: string } {
+  const sessionId = createId('session', data.sessions);
+  const rootNodeId = createId('node', data.nodes);
+  const title = input.title || input.url;
+  const rootNode: PageNode = {
+    id: rootNodeId,
+    sessionId,
+    url: input.url,
+    title,
+    domain: parseDomain(input.url),
+    visitedAt: input.now,
+    visitCount: 1,
+    depth: 0,
+    isSearchResultClick: false
+  };
+  const session: SearchSession = {
+    id: sessionId,
+    query: title,
     searchEngine: 'google',
     startedAt: input.now,
     lastActivityAt: input.now,

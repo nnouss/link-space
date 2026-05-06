@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addPageVisit, createSearchSession, endExpiredSessions, shouldStartNewSession } from './session';
+import { addPageVisit, createBrowserSession, createSearchSession, endExpiredSessions, shouldStartNewSession } from './session';
 import { createEmptyData } from './storage';
 
 describe('session logic', () => {
@@ -20,6 +20,32 @@ describe('session logic', () => {
     expect(root.title).toBe('three graph');
     expect(root.url).toBe('google://search?q=three%20graph');
     expect(root.domain).toBe('google.search');
+    expect(root.depth).toBe(0);
+    expect(root.visitCount).toBe(1);
+    expect(root.isSearchResultClick).toBe(false);
+  });
+
+  it('creates an active browser session with the visited page as root', () => {
+    const result = createBrowserSession(createEmptyData(), {
+      url: 'https://example.com/start?x=1',
+      title: 'Example Start',
+      tabId: 7,
+      now: '2026-05-07T00:00:00.000Z'
+    });
+    const session = result.data.sessions[result.sessionId];
+    const root = result.data.nodes[session.rootNodeId];
+
+    expect(session.status).toBe('active');
+    expect(session.query).toBe('Example Start');
+    expect(session.tabId).toBe(7);
+    expect(session.startedAt).toBe('2026-05-07T00:00:00.000Z');
+    expect(session.lastActivityAt).toBe('2026-05-07T00:00:00.000Z');
+    expect(session.currentNodeId).toBe(root.id);
+    expect(session.nodeIds).toEqual([root.id]);
+    expect(session.edgeIds).toEqual([]);
+    expect(root.title).toBe('Example Start');
+    expect(root.url).toBe('https://example.com/start?x=1');
+    expect(root.domain).toBe('example.com');
     expect(root.depth).toBe(0);
     expect(root.visitCount).toBe(1);
     expect(root.isSearchResultClick).toBe(false);
