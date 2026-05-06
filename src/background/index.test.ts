@@ -286,7 +286,7 @@ describe('background navigation collection', () => {
     });
   });
 
-  it('does not attach a later link navigation after typed navigation ended the session', async () => {
+  it('attaches a later link navigation to the typed root session', async () => {
     vi.setSystemTime(new Date('2026-05-06T00:06:00.000Z'));
 
     const created = createSearchSession(createEmptyData(), {
@@ -294,20 +294,16 @@ describe('background navigation collection', () => {
       tabId: 15,
       now: '2026-05-06T00:00:00.000Z'
     });
-    const endedData = {
-      ...created.data,
-      sessions: {
-        [created.sessionId]: {
-          ...created.data.sessions[created.sessionId],
-          status: 'ended' as const,
-          endedAt: '2026-05-06T00:06:00.000Z'
-        }
-      }
-    };
+    let currentData: LinkSpaceData = created.data;
 
-    localStorageMock.get.mockResolvedValueOnce({ linkSpaceData: created.data });
-    localStorageMock.set.mockResolvedValue(undefined);
-    tabsMock.get.mockResolvedValue({ title: 'Later Link' });
+    localStorageMock.get.mockImplementation(() => Promise.resolve({ linkSpaceData: currentData }));
+    localStorageMock.set.mockImplementation(({ linkSpaceData }: { linkSpaceData: LinkSpaceData }) => {
+      currentData = linkSpaceData;
+      return Promise.resolve();
+    });
+    tabsMock.get
+      .mockResolvedValueOnce({ title: 'Typed Page' })
+      .mockResolvedValueOnce({ title: 'Later Link' });
 
     await import('./index');
     const listener = getNavigationListener();
@@ -322,7 +318,6 @@ describe('background navigation collection', () => {
     );
     await vi.runAllTimersAsync();
     localStorageMock.set.mockClear();
-    localStorageMock.get.mockResolvedValue({ linkSpaceData: endedData });
 
     listener(
       createNavigationDetails({
@@ -333,7 +328,44 @@ describe('background navigation collection', () => {
     );
     await vi.runAllTimersAsync();
 
-    expect(localStorageMock.set).not.toHaveBeenCalled();
+    expect(localStorageMock.set).toHaveBeenCalledWith({
+      linkSpaceData: expect.objectContaining({
+        sessions: expect.objectContaining({
+          [created.sessionId]: expect.objectContaining({
+            status: 'ended',
+            nodeIds: ['node-1']
+          }),
+          'session-2': expect.objectContaining({
+            status: 'active',
+            rootNodeId: 'node-2',
+            currentNodeId: 'node-3',
+            nodeIds: ['node-2', 'node-3'],
+            tabId: 15
+          })
+        }),
+        nodes: expect.objectContaining({
+          'node-2': expect.objectContaining({
+            url: 'https://sensitive.example/page',
+            title: 'Typed Page',
+            depth: 0
+          }),
+          'node-3': expect.objectContaining({
+            sessionId: 'session-2',
+            url: 'https://example.com/later',
+            title: 'Later Link',
+            fromUrl: 'https://sensitive.example/page',
+            depth: 1
+          })
+        }),
+        edges: expect.objectContaining({
+          'edge-1': expect.objectContaining({
+            sessionId: 'session-2',
+            fromNodeId: 'node-2',
+            toNodeId: 'node-3'
+          })
+        })
+      })
+    });
   });
 
   it('records link non-Google navigation after a search session', async () => {
