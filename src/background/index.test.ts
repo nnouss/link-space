@@ -156,6 +156,49 @@ describe('background navigation collection', () => {
     });
   });
 
+  it('starts a new Google session when query matches an older active session but not the latest', async () => {
+    vi.setSystemTime(new Date('2026-05-06T00:25:00.000Z'));
+
+    const older = createSearchSession(createEmptyData(), {
+      query: 'A',
+      tabId: 6,
+      now: '2026-05-06T00:00:00.000Z'
+    });
+    const newer = createSearchSession(older.data, {
+      query: 'B',
+      tabId: 6,
+      now: '2026-05-06T00:10:00.000Z'
+    });
+    localStorageMock.get.mockResolvedValue({ linkSpaceData: newer.data });
+    localStorageMock.set.mockResolvedValue(undefined);
+
+    await import('./index');
+    const listener = getNavigationListener();
+
+    listener(createNavigationDetails({ tabId: 6, url: 'https://www.google.com/search?q=A' }));
+    await vi.runAllTimersAsync();
+
+    expect(localStorageMock.set).toHaveBeenCalledWith({
+      linkSpaceData: expect.objectContaining({
+        sessions: expect.objectContaining({
+          [older.sessionId]: expect.objectContaining({
+            status: 'ended',
+            endedAt: '2026-05-06T00:25:00.000Z'
+          }),
+          [newer.sessionId]: expect.objectContaining({
+            status: 'ended',
+            endedAt: '2026-05-06T00:25:00.000Z'
+          }),
+          'session-3': expect.objectContaining({
+            query: 'A',
+            status: 'active',
+            tabId: 6
+          })
+        })
+      })
+    });
+  });
+
   it('recovers the latest active session when multiple sessions exist for one tab', async () => {
     vi.setSystemTime(new Date('2026-05-06T00:20:00.000Z'));
 

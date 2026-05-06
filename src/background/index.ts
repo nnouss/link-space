@@ -2,8 +2,7 @@ import { parseGoogleSearch } from '../shared/google';
 import {
   addPageVisit,
   createSearchSession,
-  endExpiredSessions,
-  shouldStartNewSession
+  endExpiredSessions
 } from '../shared/session';
 import { importLinkSpaceData, loadData, saveData } from '../shared/storage';
 import type { LinkSpaceData, RuntimeMessage, SearchSession } from '../shared/types';
@@ -65,7 +64,9 @@ async function handleNavigation(details: chrome.webNavigation.WebNavigationFrame
 
   const parsedSearch = parseGoogleSearch(details.url);
   if (parsedSearch) {
-    if (shouldStartNewSession(data, details.tabId, parsedSearch.query)) {
+    const activeSession = findActiveSessionByTab(data, details.tabId);
+
+    if (!activeSession || activeSession.query !== parsedSearch.query) {
       data = endActiveSessionsForTab(data, details.tabId, now);
       const result = createSearchSession(data, {
         query: parsedSearch.query,
@@ -76,11 +77,8 @@ async function handleNavigation(details: chrome.webNavigation.WebNavigationFrame
       sessionByTab.set(details.tabId, result.sessionId);
       lastNodeByTab.set(details.tabId, data.sessions[result.sessionId].rootNodeId);
     } else {
-      const session = findActiveSessionForTab(data, details.tabId, parsedSearch.query);
-      if (session) {
-        sessionByTab.set(details.tabId, session.id);
-        lastNodeByTab.set(details.tabId, session.rootNodeId);
-      }
+      sessionByTab.set(details.tabId, activeSession.id);
+      lastNodeByTab.set(details.tabId, activeSession.rootNodeId);
     }
 
     await saveData(data);
@@ -145,18 +143,6 @@ async function handleRuntimeMessage(message: RuntimeMessage): Promise<RuntimeRes
   }
 
   return { ok: false, error: 'Unsupported message' };
-}
-
-function findActiveSessionForTab(
-  data: LinkSpaceData,
-  tabId: number,
-  query: string
-): SearchSession | undefined {
-  return findLatestActiveSession(
-    Object.values(data.sessions).filter(
-      (session) => session.tabId === tabId && session.query === query
-    )
-  );
 }
 
 function resolveNavigationSource(
