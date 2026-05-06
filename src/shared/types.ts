@@ -49,3 +49,8 @@ export interface LinkSpaceData {
   edges: Record<string, NavigationEdge>;
   settings: Settings;
 }
+
+export type RuntimeMessage =
+  | { type: 'GET_DATA' }
+  | { type: 'SET_RECORDING_PAUSED'; paused: boolean }
+  | { type: 'IMPORT_DATA'; payload: LinkSpaceData };
