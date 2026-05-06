@@ -1,5 +1,6 @@
 import ForceGraph3D from 'react-force-graph-3d';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import type { CSSProperties, RefObject } from 'react';
 import type { NavigationEdge, PageNode, SearchSession } from '../shared/types';
 
 interface GraphViewProps {
@@ -23,8 +24,8 @@ export interface GraphLink {
   target: string;
 }
 
-const NODE_COLORS = ['#6ee7b7', '#60a5fa', '#c084fc', '#fbbf24', '#fb7185'];
-const BACKGROUND_COLOR = '#111315';
+const NODE_COLORS = ['#49d6a0', '#60a5fa', '#c084fc', '#fbbf24', '#fb7185'];
+const BACKGROUND_COLOR = '#0f1216';
 
 export function GraphView({ session, nodes, edges, onSelectNode }: GraphViewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -35,7 +36,7 @@ export function GraphView({ session, nodes, edges, onSelectNode }: GraphViewProp
     <div ref={containerRef} style={graphContainerStyle}>
       {!session ? (
         <div style={emptyStateStyle}>
-          <p style={{ margin: 0 }}>세션을 선택하세요.</p>
+          <p style={{ margin: 0 }}>왼쪽에서 세션을 선택하세요.</p>
         </div>
       ) : (
         <ForceGraph3D
@@ -51,9 +52,9 @@ export function GraphView({ session, nodes, edges, onSelectNode }: GraphViewProp
           nodeColor="color"
           nodeRelSize={5}
           nodeResolution={24}
-          linkColor={() => '#4b5563'}
-          linkWidth={0.35}
-          linkOpacity={0.42}
+          linkColor={() => '#667085'}
+          linkWidth={0.4}
+          linkOpacity={0.46}
           showNavInfo={false}
           enableNodeDrag={false}
           onNodeClick={(node) => onSelectNode(node.page)}
@@ -105,7 +106,7 @@ function nodeValue(node: PageNode): number {
   return 1.4 + dwellScore + visitScore * 0.8;
 }
 
-function useElementSize(ref: React.RefObject<HTMLElement | null>) {
+function useElementSize(ref: RefObject<HTMLElement | null>) {
   const [size, setSize] = useState(() => ({
     width: 1,
     height: 1
@@ -142,12 +143,12 @@ const graphContainerStyle = {
   background: BACKGROUND_COLOR,
   height: '100%',
   width: '100%'
-} satisfies React.CSSProperties;
+} satisfies CSSProperties;
 
 const emptyStateStyle = {
   alignItems: 'center',
   background: BACKGROUND_COLOR,
-  color: '#d1d5db',
+  color: '#dbe4f0',
   display: 'flex',
   fontFamily:
     'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
@@ -155,4 +156,4 @@ const emptyStateStyle = {
   height: '100%',
   justifyContent: 'center',
   width: '100%'
-} satisfies React.CSSProperties;
+} satisfies CSSProperties;
