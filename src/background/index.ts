@@ -32,14 +32,20 @@ function enqueueNavigation(details: chrome.webNavigation.WebNavigationFramedCall
   }
 
   const previous = navigationQueueByTab.get(details.tabId) ?? Promise.resolve();
-  const next = previous.catch(() => undefined).then(() => handleNavigation(details));
+  const next = previous
+    .catch((error) => {
+      console.error('Previous navigation task failed', error);
+    })
+    .then(() => handleNavigation(details));
 
   navigationQueueByTab.set(details.tabId, next);
   void next.finally(() => {
     if (navigationQueueByTab.get(details.tabId) === next) {
       navigationQueueByTab.delete(details.tabId);
     }
-  }).catch(() => undefined);
+  }).catch((error) => {
+    console.error('Navigation task failed', error);
+  });
 }
 
 async function handleNavigation(details: chrome.webNavigation.WebNavigationFramedCallbackDetails) {
@@ -60,6 +66,7 @@ async function handleNavigation(details: chrome.webNavigation.WebNavigationFrame
   const parsedSearch = parseGoogleSearch(details.url);
   if (parsedSearch) {
     if (shouldStartNewSession(data, details.tabId, parsedSearch.query)) {
+      data = endActiveSessionsForTab(data, details.tabId, now);
       const result = createSearchSession(data, {
         query: parsedSearch.query,
         tabId: details.tabId,
@@ -126,6 +133,8 @@ async function handleRuntimeMessage(message: RuntimeMessage): Promise<RuntimeRes
     try {
       const importedData = importLinkSpaceData(JSON.stringify(message.payload));
       await saveData(importedData);
+      sessionByTab.clear();
+      lastNodeByTab.clear();
       return { ok: true, data: importedData };
     } catch {
       return {
@@ -143,8 +152,10 @@ function findActiveSessionForTab(
   tabId: number,
   query: string
 ): SearchSession | undefined {
-  return Object.values(data.sessions).find(
-    (session) => session.status === 'active' && session.tabId === tabId && session.query === query
+  return findLatestActiveSession(
+    Object.values(data.sessions).filter(
+      (session) => session.tabId === tabId && session.query === query
+    )
   );
 }
 
@@ -163,7 +174,13 @@ function resolveNavigationSource(
   const trackedSession = trackedSessionId ? data.sessions[trackedSessionId] : undefined;
   const trackedNode = trackedNodeId ? data.nodes[trackedNodeId] : undefined;
 
-  if (trackedSessionId && trackedNodeId && trackedSession?.status === 'active' && trackedNode) {
+  if (
+    trackedSessionId &&
+    trackedNodeId &&
+    trackedSession?.status === 'active' &&
+    trackedSession.tabId === tabId &&
+    trackedNode
+  ) {
     return {
       sessionId: trackedSessionId,
       fromNodeId: trackedNodeId,
@@ -193,9 +210,39 @@ function resolveNavigationSource(
 }
 
 function findActiveSessionByTab(data: LinkSpaceData, tabId: number): SearchSession | undefined {
-  return Object.values(data.sessions).find(
-    (session) => session.status === 'active' && session.tabId === tabId
+  return findLatestActiveSession(
+    Object.values(data.sessions).filter((session) => session.tabId === tabId)
   );
+}
+
+function findLatestActiveSession(sessions: SearchSession[]): SearchSession | undefined {
+  return sessions
+    .filter((session) => session.status === 'active')
+    .sort((a, b) => sessionTime(b) - sessionTime(a))[0];
+}
+
+function sessionTime(session: SearchSession): number {
+  return new Date(session.lastActivityAt || session.startedAt).getTime();
+}
+
+function endActiveSessionsForTab(data: LinkSpaceData, tabId: number, now: string): LinkSpaceData {
+  const sessions = Object.fromEntries(
+    Object.entries(data.sessions).map(([sessionId, session]) => [
+      sessionId,
+      session.status === 'active' && session.tabId === tabId
+        ? {
+            ...session,
+            status: 'ended' as const,
+            endedAt: now
+          }
+        : session
+    ])
+  );
+
+  return {
+    ...data,
+    sessions
+  };
 }
 
 function hasExpirationChanges(previous: LinkSpaceData, next: LinkSpaceData): boolean {

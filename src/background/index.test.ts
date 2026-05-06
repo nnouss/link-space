@@ -121,7 +121,141 @@ describe('background navigation collection', () => {
       error: 'Invalid Link Space data'
     });
   });
+
+  it('ends previous active session in the same tab when a new Google search starts', async () => {
+    vi.setSystemTime(new Date('2026-05-06T00:10:00.000Z'));
+
+    const first = createSearchSession(createEmptyData(), {
+      query: 'first query',
+      tabId: 4,
+      now: '2026-05-06T00:00:00.000Z'
+    });
+    localStorageMock.get.mockResolvedValue({ linkSpaceData: first.data });
+    localStorageMock.set.mockResolvedValue(undefined);
+
+    await import('./index');
+    const listener = getNavigationListener();
+
+    listener(createNavigationDetails({ tabId: 4, url: 'https://www.google.com/search?q=second' }));
+    await vi.runAllTimersAsync();
+
+    expect(localStorageMock.set).toHaveBeenCalledWith({
+      linkSpaceData: expect.objectContaining({
+        sessions: expect.objectContaining({
+          [first.sessionId]: expect.objectContaining({
+            status: 'ended',
+            endedAt: '2026-05-06T00:10:00.000Z'
+          }),
+          'session-2': expect.objectContaining({
+            query: 'second',
+            status: 'active',
+            tabId: 4
+          })
+        })
+      })
+    });
+  });
+
+  it('recovers the latest active session when multiple sessions exist for one tab', async () => {
+    vi.setSystemTime(new Date('2026-05-06T00:20:00.000Z'));
+
+    const first = createSearchSession(createEmptyData(), {
+      query: 'older',
+      tabId: 5,
+      now: '2026-05-06T00:00:00.000Z'
+    });
+    const second = createSearchSession(first.data, {
+      query: 'newer',
+      tabId: 5,
+      now: '2026-05-06T00:10:00.000Z'
+    });
+    localStorageMock.get.mockResolvedValue({ linkSpaceData: second.data });
+    localStorageMock.set.mockResolvedValue(undefined);
+    tabsMock.get.mockResolvedValue({ title: 'Latest Page' });
+
+    await import('./index');
+    const listener = getNavigationListener();
+
+    listener(createNavigationDetails({ tabId: 5, url: 'https://example.com/latest' }));
+    await vi.runAllTimersAsync();
+
+    expect(localStorageMock.set).toHaveBeenCalledWith({
+      linkSpaceData: expect.objectContaining({
+        sessions: expect.objectContaining({
+          [second.sessionId]: expect.objectContaining({
+            nodeIds: ['node-2', 'node-3']
+          })
+        }),
+        nodes: expect.objectContaining({
+          'node-3': expect.objectContaining({
+            sessionId: second.sessionId,
+            fromUrl: 'google://search?q=newer',
+            title: 'Latest Page'
+          })
+        })
+      })
+    });
+  });
+
+  it('clears tracked navigation state after successful import', async () => {
+    vi.setSystemTime(new Date('2026-05-06T00:30:00.000Z'));
+
+    const initial = createEmptyData();
+    const imported = createSearchSession(createEmptyData(), {
+      query: 'imported',
+      tabId: 99,
+      now: '2026-05-06T00:00:00.000Z'
+    }).data;
+
+    localStorageMock.get.mockResolvedValueOnce({ linkSpaceData: initial });
+    localStorageMock.set.mockResolvedValue(undefined);
+
+    await import('./index');
+    const navigationListener = getNavigationListener();
+
+    navigationListener(createNavigationDetails({ tabId: 7, url: 'https://www.google.com/search?q=stale' }));
+    await vi.runAllTimersAsync();
+    localStorageMock.set.mockClear();
+
+    const messageListener = getRuntimeMessageListener();
+    const sendResponse = vi.fn();
+    messageListener(
+      { type: 'IMPORT_DATA', payload: imported },
+      {} as chrome.runtime.MessageSender,
+      sendResponse
+    );
+    await vi.runAllTimersAsync();
+    expect(sendResponse).toHaveBeenCalledWith({ ok: true, data: imported });
+    localStorageMock.set.mockClear();
+    localStorageMock.get.mockResolvedValue({ linkSpaceData: imported });
+    tabsMock.get.mockResolvedValue({ title: 'Should Not Attach' });
+
+    navigationListener(createNavigationDetails({ tabId: 7, url: 'https://example.com/stale' }));
+    await vi.runAllTimersAsync();
+
+    expect(localStorageMock.set).not.toHaveBeenCalled();
+  });
 });
+
+function getNavigationListener(): (
+  details: chrome.webNavigation.WebNavigationFramedCallbackDetails
+) => void {
+  return webNavigationMock.addListener.mock.calls[0][0] as (
+    details: chrome.webNavigation.WebNavigationFramedCallbackDetails
+  ) => void;
+}
+
+function getRuntimeMessageListener(): (
+  message: unknown,
+  sender: chrome.runtime.MessageSender,
+  sendResponse: (response: unknown) => void
+) => true {
+  return runtimeMessageMock.addListener.mock.calls[0][0] as (
+    message: unknown,
+    sender: chrome.runtime.MessageSender,
+    sendResponse: (response: unknown) => void
+  ) => true;
+}
 
 function createNavigationDetails({
   tabId,
