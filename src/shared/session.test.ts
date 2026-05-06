@@ -41,6 +41,7 @@ describe('session logic', () => {
     expect(session.startedAt).toBe('2026-05-07T00:00:00.000Z');
     expect(session.lastActivityAt).toBe('2026-05-07T00:00:00.000Z');
     expect(session.currentNodeId).toBe(root.id);
+    expect(session.currentNodeIdByTab).toEqual({ 7: root.id });
     expect(session.nodeIds).toEqual([root.id]);
     expect(session.edgeIds).toEqual([]);
     expect(root.title).toBe('Example Start');
@@ -64,7 +65,8 @@ describe('session logic', () => {
       url: 'https://example.com/a',
       title: 'A',
       now: '2026-05-06T00:01:00.000Z',
-      isSearchResultClick: true
+      isSearchResultClick: true,
+      tabId: 1
     });
     const session = added.data.sessions[first.sessionId];
     const node = added.data.nodes[added.nodeId];
@@ -73,6 +75,7 @@ describe('session logic', () => {
     expect(session.nodeIds).toHaveLength(2);
     expect(session.edgeIds).toHaveLength(1);
     expect(session.lastActivityAt).toBe('2026-05-06T00:01:00.000Z');
+    expect(session.currentNodeIdByTab).toEqual({ 1: added.nodeId });
     expect(node.url).toBe('https://example.com/a');
     expect(node.title).toBe('A');
     expect(node.domain).toBe('example.com');
@@ -115,6 +118,39 @@ describe('session logic', () => {
     expect(session.lastActivityAt).toBe('2026-05-06T00:03:00.000Z');
     expect(node.visitCount).toBe(2);
     expect(node.title).toBe('A');
+  });
+
+  it('tracks current nodes independently per tab when a tab id is provided', () => {
+    const first = createSearchSession(createEmptyData(), {
+      query: 'per tab',
+      tabId: 1,
+      now: '2026-05-06T00:00:00.000Z'
+    });
+    const rootNodeId = first.data.sessions[first.sessionId].rootNodeId;
+    const openerVisit = addPageVisit(first.data, {
+      sessionId: first.sessionId,
+      fromNodeId: rootNodeId,
+      url: 'https://example.com/a',
+      title: 'A',
+      now: '2026-05-06T00:01:00.000Z',
+      isSearchResultClick: true,
+      tabId: 1
+    });
+    const childVisit = addPageVisit(openerVisit.data, {
+      sessionId: first.sessionId,
+      fromNodeId: openerVisit.nodeId,
+      url: 'https://example.com/b',
+      title: 'B',
+      now: '2026-05-06T00:02:00.000Z',
+      isSearchResultClick: false,
+      tabId: 2
+    });
+
+    expect(childVisit.data.sessions[first.sessionId].currentNodeId).toBe(childVisit.nodeId);
+    expect(childVisit.data.sessions[first.sessionId].currentNodeIdByTab).toEqual({
+      1: openerVisit.nodeId,
+      2: childVisit.nodeId
+    });
   });
 
   it('throws when adding a page visit to an unknown session', () => {

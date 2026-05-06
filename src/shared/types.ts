@@ -11,6 +11,7 @@ export interface SearchSession {
   status: SessionStatus;
   rootNodeId: string;
   currentNodeId?: string;
+  currentNodeIdByTab?: Record<string, string>;
   nodeIds: string[];
   edgeIds: string[];
   tabId?: number;

@@ -195,6 +195,53 @@ describe('storage logic', () => {
 
     expect(() => importLinkSpaceData(JSON.stringify(data))).toThrow('Invalid Link Space data');
   });
+
+  it('accepts valid currentNodeIdByTab entries', () => {
+    const created = createSearchSession(createEmptyData(), {
+      query: 'valid per tab current',
+      tabId: 1,
+      now: '2026-05-06T00:00:00.000Z'
+    });
+    const added = addPageVisit(created.data, {
+      sessionId: created.sessionId,
+      fromNodeId: created.data.sessions[created.sessionId].rootNodeId,
+      url: 'https://example.com',
+      title: 'Example',
+      now: '2026-05-06T00:01:00.000Z',
+      isSearchResultClick: true,
+      tabId: 2
+    });
+
+    expect(importLinkSpaceData(JSON.stringify(added.data))).toEqual(added.data);
+  });
+
+  it('rejects currentNodeIdByTab entries that point outside the session', () => {
+    const first = createSearchSession(createEmptyData(), {
+      query: 'first',
+      tabId: 1,
+      now: '2026-05-06T00:00:00.000Z'
+    });
+    const second = createSearchSession(first.data, {
+      query: 'second',
+      tabId: 2,
+      now: '2026-05-06T00:01:00.000Z'
+    });
+    const data: LinkSpaceData = {
+      ...second.data,
+      sessions: {
+        ...second.data.sessions,
+        [first.sessionId]: {
+          ...second.data.sessions[first.sessionId],
+          currentNodeIdByTab: {
+            1: second.data.sessions[second.sessionId].rootNodeId
+          }
+        }
+      }
+    };
+
+    expect(() => importLinkSpaceData(JSON.stringify(data))).toThrow('Invalid Link Space data');
+  });
+
   it('deleteSearchSession removes the selected session and its graph records', () => {
     const first = createSearchSession(createEmptyData(), {
       query: 'delete me',

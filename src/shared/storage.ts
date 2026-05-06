@@ -135,6 +135,17 @@ function hasValidGraphReferences(data: LinkSpaceData): boolean {
       }
     }
 
+    if (session.currentNodeIdByTab) {
+      const tabCurrentNodesAreValid = Object.values(session.currentNodeIdByTab).every((nodeId) => {
+        const currentNode = data.nodes[nodeId];
+        return Boolean(currentNode && currentNode.sessionId === session.id && session.nodeIds.includes(nodeId));
+      });
+
+      if (!tabCurrentNodesAreValid) {
+        return false;
+      }
+    }
+
     const nodesAreValid = session.nodeIds.every((nodeId) => {
       const node = data.nodes[nodeId];
       return Boolean(node && node.sessionId === session.id);
@@ -219,6 +230,7 @@ function isSearchSession(value: unknown): value is SearchSession {
     (value.status === 'active' || value.status === 'ended') &&
     isString(value.rootNodeId) &&
     isOptionalString(value.currentNodeId) &&
+    isOptionalStringRecord(value.currentNodeIdByTab) &&
     isStringArray(value.nodeIds) &&
     isStringArray(value.edgeIds) &&
     isOptionalString(value.endedAt) &&
@@ -266,6 +278,10 @@ function isString(value: unknown): value is string {
 
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every(isString);
+}
+
+function isOptionalStringRecord(value: unknown): value is Record<string, string> | undefined {
+  return value === undefined || (isPlainRecord(value) && Object.values(value).every(isString));
 }
 
 function isOptionalString(value: unknown): value is string | undefined {

@@ -661,6 +661,110 @@ describe('background navigation collection', () => {
     });
   });
 
+  it('branches from the restored opener page in a child tab after child tab back navigation', async () => {
+    vi.setSystemTime(new Date('2026-05-06T00:12:30.000Z'));
+
+    const created = createSearchSession(createEmptyData(), {
+      query: 'child back',
+      tabId: 27,
+      now: '2026-05-06T00:00:00.000Z'
+    });
+    let currentData: LinkSpaceData = created.data;
+
+    localStorageMock.get.mockImplementation(() => Promise.resolve({ linkSpaceData: currentData }));
+    localStorageMock.set.mockImplementation(({ linkSpaceData }: { linkSpaceData: LinkSpaceData }) => {
+      currentData = linkSpaceData;
+      return Promise.resolve();
+    });
+    tabsMock.get.mockImplementation((tabId: number) =>
+      Promise.resolve({ title: tabId === 28 ? 'Child Page' : 'Opener Page' })
+    );
+
+    await import('./index');
+    const navigationListener = getNavigationListener();
+    const tabCreatedListener = getTabCreatedListener();
+
+    navigationListener(createNavigationDetails({ tabId: 27, url: 'https://example.com/a' }));
+    await vi.runAllTimersAsync();
+    tabCreatedListener({ id: 28, openerTabId: 27 } as chrome.tabs.Tab);
+    navigationListener(createNavigationDetails({ tabId: 28, url: 'https://example.com/b' }));
+    await vi.runAllTimersAsync();
+
+    navigationListener(
+      createNavigationDetails({
+        tabId: 28,
+        url: 'https://example.com/a',
+        transitionQualifiers: ['forward_back']
+      })
+    );
+    await vi.runAllTimersAsync();
+    navigationListener(createNavigationDetails({ tabId: 28, url: 'https://example.com/c' }));
+    await vi.runAllTimersAsync();
+
+    expect(currentData.sessions[created.sessionId].nodeIds).toEqual([
+      'node-1',
+      'node-2',
+      'node-3',
+      'node-4'
+    ]);
+    expect(currentData.nodes['node-4']).toMatchObject({
+      url: 'https://example.com/c',
+      fromUrl: 'https://example.com/a',
+      depth: 2
+    });
+    expect(currentData.sessions[created.sessionId].edgeIds).toEqual(['edge-1', 'edge-2', 'edge-3']);
+  });
+
+  it('keeps the opener tab current node after a child tab visit and worker restart', async () => {
+    vi.setSystemTime(new Date('2026-05-06T00:12:45.000Z'));
+
+    const created = createSearchSession(createEmptyData(), {
+      query: 'opener restart',
+      tabId: 29,
+      now: '2026-05-06T00:00:00.000Z'
+    });
+    let currentData: LinkSpaceData = created.data;
+
+    localStorageMock.get.mockImplementation(() => Promise.resolve({ linkSpaceData: currentData }));
+    localStorageMock.set.mockImplementation(({ linkSpaceData }: { linkSpaceData: LinkSpaceData }) => {
+      currentData = linkSpaceData;
+      return Promise.resolve();
+    });
+    tabsMock.get.mockImplementation((tabId: number) =>
+      Promise.resolve({ title: tabId === 30 ? 'Child B' : 'Opener Page' })
+    );
+
+    await import('./index');
+    let navigationListener = getNavigationListener();
+    const tabCreatedListener = getTabCreatedListener();
+
+    navigationListener(createNavigationDetails({ tabId: 29, url: 'https://example.com/a' }));
+    await vi.runAllTimersAsync();
+    tabCreatedListener({ id: 30, openerTabId: 29 } as chrome.tabs.Tab);
+    navigationListener(createNavigationDetails({ tabId: 30, url: 'https://example.com/b' }));
+    await vi.runAllTimersAsync();
+
+    vi.resetModules();
+    await import('./index');
+    navigationListener = getNavigationListener();
+
+    navigationListener(createNavigationDetails({ tabId: 29, url: 'https://example.com/c' }));
+    await vi.runAllTimersAsync();
+
+    expect(currentData.sessions[created.sessionId].nodeIds).toEqual([
+      'node-1',
+      'node-2',
+      'node-3',
+      'node-4'
+    ]);
+    expect(currentData.nodes['node-4']).toMatchObject({
+      url: 'https://example.com/c',
+      fromUrl: 'https://example.com/a',
+      depth: 2
+    });
+    expect(currentData.sessions[created.sessionId].edgeIds).toEqual(['edge-1', 'edge-2', 'edge-3']);
+  });
+
   it('does not create a new root when an active page opens a link in a new tab', async () => {
     vi.setSystemTime(new Date('2026-05-07T00:03:00.000Z'));
 
@@ -830,6 +934,59 @@ describe('background navigation collection', () => {
         nodeIds: ['node-1']
       })
     );
+    expect(currentData.nodes).not.toHaveProperty('node-2');
+  });
+
+  it('does not let an in-flight page visit save after recording version changes without pausing', async () => {
+    vi.setSystemTime(new Date('2026-05-06T00:16:00.000Z'));
+
+    const created = createSearchSession(createEmptyData(), {
+      query: 'version race',
+      tabId: 20,
+      now: '2026-05-06T00:00:00.000Z'
+    });
+    let currentData: LinkSpaceData = created.data;
+    let resolveTab: (tab: { title: string }) => void = () => undefined;
+    const pendingTab = new Promise<{ title: string }>((resolve) => {
+      resolveTab = resolve;
+    });
+
+    localStorageMock.get.mockImplementation(() => Promise.resolve({ linkSpaceData: currentData }));
+    localStorageMock.set.mockImplementation(({ linkSpaceData }: { linkSpaceData: LinkSpaceData }) => {
+      currentData = linkSpaceData;
+      return Promise.resolve();
+    });
+    tabsMock.get.mockReturnValue(pendingTab);
+
+    await import('./index');
+    const navigationListener = getNavigationListener();
+    const messageListener = getRuntimeMessageListener();
+    const sendResponse = vi.fn();
+
+    navigationListener(
+      createNavigationDetails({
+        tabId: 20,
+        url: 'https://example.com/version-race',
+        transitionType: 'link'
+      })
+    );
+    await vi.waitFor(() => {
+      expect(tabsMock.get).toHaveBeenCalledWith(20);
+    });
+
+    messageListener(
+      { type: 'SET_RECORDING_PAUSED', paused: false },
+      {} as chrome.runtime.MessageSender,
+      sendResponse
+    );
+    await vi.runAllTimersAsync();
+    localStorageMock.set.mockClear();
+
+    resolveTab({ title: 'Version Race Page' });
+    await vi.runAllTimersAsync();
+
+    expect(localStorageMock.set).not.toHaveBeenCalled();
+    expect(currentData.sessions[created.sessionId].nodeIds).toEqual(['node-1']);
     expect(currentData.nodes).not.toHaveProperty('node-2');
   });
 

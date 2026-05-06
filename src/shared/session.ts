@@ -20,6 +20,7 @@ interface AddPageVisitInput {
   title: string;
   now: string;
   isSearchResultClick: boolean;
+  tabId?: number;
 }
 
 export function createSearchSession(
@@ -48,6 +49,7 @@ export function createSearchSession(
     status: 'active',
     rootNodeId,
     currentNodeId: rootNodeId,
+    currentNodeIdByTab: { [input.tabId]: rootNodeId },
     nodeIds: [rootNodeId],
     edgeIds: [],
     tabId: input.tabId
@@ -96,6 +98,7 @@ export function createBrowserSession(
     status: 'active',
     rootNodeId,
     currentNodeId: rootNodeId,
+    currentNodeIdByTab: { [input.tabId]: rootNodeId },
     nodeIds: [rootNodeId],
     edgeIds: [],
     tabId: input.tabId
@@ -156,7 +159,8 @@ export function addPageVisit(
           [input.sessionId]: {
             ...session,
             lastActivityAt: input.now,
-            currentNodeId: existingNodeId
+            currentNodeId: existingNodeId,
+            currentNodeIdByTab: updateCurrentNodeIdByTab(session, input.tabId, existingNodeId)
           }
         },
         nodes: {
@@ -203,6 +207,7 @@ export function addPageVisit(
           ...session,
           lastActivityAt: input.now,
           currentNodeId: nodeId,
+          currentNodeIdByTab: updateCurrentNodeIdByTab(session, input.tabId, nodeId),
           nodeIds: [...session.nodeIds, nodeId],
           edgeIds: [...session.edgeIds, edgeId]
         }
@@ -217,6 +222,21 @@ export function addPageVisit(
       }
     },
     nodeId
+  };
+}
+
+function updateCurrentNodeIdByTab(
+  session: SearchSession,
+  tabId: number | undefined,
+  nodeId: string
+): Record<string, string> | undefined {
+  if (typeof tabId !== 'number') {
+    return session.currentNodeIdByTab;
+  }
+
+  return {
+    ...session.currentNodeIdByTab,
+    [tabId]: nodeId
   };
 }
 
