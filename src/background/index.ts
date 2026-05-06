@@ -30,7 +30,9 @@ async function handleNavigation(details: chrome.webNavigation.WebNavigationFrame
   }
 
   const now = new Date().toISOString();
-  let data = endExpiredSessions(await loadData(), now);
+  const loadedData = await loadData();
+  let data = endExpiredSessions(loadedData, now);
+  const expirationChanged = hasExpirationChanges(loadedData, data);
 
   if (data.settings.recordingPaused) {
     await saveData(data);
@@ -66,6 +68,9 @@ async function handleNavigation(details: chrome.webNavigation.WebNavigationFrame
   const fromNode = fromNodeId ? data.nodes[fromNodeId] : undefined;
 
   if (!sessionId || !fromNodeId || !session || !fromNode || session.status !== 'active') {
+    if (expirationChanged) {
+      await saveData(data);
+    }
     return;
   }
 
@@ -118,4 +123,15 @@ function findActiveSessionForTab(
   return Object.values(data.sessions).find(
     (session) => session.status === 'active' && session.tabId === tabId && session.query === query
   );
+}
+
+function hasExpirationChanges(previous: LinkSpaceData, next: LinkSpaceData): boolean {
+  return Object.keys(previous.sessions).some((sessionId) => {
+    const previousSession = previous.sessions[sessionId];
+    const nextSession = next.sessions[sessionId];
+
+    return (
+      previousSession.status !== nextSession?.status || previousSession.endedAt !== nextSession.endedAt
+    );
+  });
 }
