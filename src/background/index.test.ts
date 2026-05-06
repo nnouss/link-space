@@ -284,6 +284,79 @@ describe('background navigation collection', () => {
     expect(currentData.nodes).not.toHaveProperty('node-2');
   });
 
+  it('does not let an in-flight navigation attach after pause and quick resume ended the session', async () => {
+    vi.setSystemTime(new Date('2026-05-06T00:15:00.000Z'));
+
+    const created = createSearchSession(createEmptyData(), {
+      query: 'pause resume race',
+      tabId: 19,
+      now: '2026-05-06T00:00:00.000Z'
+    });
+    let currentData: LinkSpaceData = created.data;
+    let resolveTab: (tab: { title: string }) => void = () => undefined;
+    const pendingTab = new Promise<{ title: string }>((resolve) => {
+      resolveTab = resolve;
+    });
+
+    localStorageMock.get.mockImplementation(() => Promise.resolve({ linkSpaceData: currentData }));
+    localStorageMock.set.mockImplementation(({ linkSpaceData }: { linkSpaceData: LinkSpaceData }) => {
+      currentData = linkSpaceData;
+      return Promise.resolve();
+    });
+    tabsMock.get.mockReturnValue(pendingTab);
+
+    await import('./index');
+    const navigationListener = getNavigationListener();
+    const messageListener = getRuntimeMessageListener();
+    const sendResponse = vi.fn();
+
+    navigationListener(
+      createNavigationDetails({
+        tabId: 19,
+        url: 'https://example.com/resume-race',
+        transitionType: 'link'
+      })
+    );
+    await vi.waitFor(() => {
+      expect(tabsMock.get).toHaveBeenCalledWith(19);
+    });
+
+    messageListener(
+      { type: 'SET_RECORDING_PAUSED', paused: true },
+      {} as chrome.runtime.MessageSender,
+      sendResponse
+    );
+    await vi.runAllTimersAsync();
+    sendResponse.mockClear();
+
+    messageListener(
+      { type: 'SET_RECORDING_PAUSED', paused: false },
+      {} as chrome.runtime.MessageSender,
+      sendResponse
+    );
+    await vi.runAllTimersAsync();
+
+    expect(currentData.settings.recordingPaused).toBe(false);
+    expect(currentData.sessions[created.sessionId]).toEqual(
+      expect.objectContaining({
+        status: 'ended',
+        nodeIds: ['node-1']
+      })
+    );
+
+    resolveTab({ title: 'Resume Race Page' });
+    await vi.runAllTimersAsync();
+
+    expect(currentData.settings.recordingPaused).toBe(false);
+    expect(currentData.sessions[created.sessionId]).toEqual(
+      expect.objectContaining({
+        status: 'ended',
+        nodeIds: ['node-1']
+      })
+    );
+    expect(currentData.nodes).not.toHaveProperty('node-2');
+  });
+
   it('rejects invalid imported data without saving', async () => {
     localStorageMock.set.mockResolvedValue(undefined);
 

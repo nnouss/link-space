@@ -123,7 +123,7 @@ async function handleNavigation(details: chrome.webNavigation.WebNavigationTrans
   }
 
   const tab = await chrome.tabs.get(details.tabId);
-  const result = addPageVisit(data, {
+  const result = await savePageVisit(details.tabId, {
     sessionId: source.sessionId,
     fromNodeId: source.fromNodeId,
     url: details.url,
@@ -132,8 +132,7 @@ async function handleNavigation(details: chrome.webNavigation.WebNavigationTrans
     isSearchResultClick: source.fromNode.depth === 0
   });
 
-  const saved = await saveNavigationData(result.data, details.tabId);
-  if (saved) {
+  if (result) {
     lastNodeByTab.set(details.tabId, result.nodeId);
   }
 }
@@ -207,6 +206,41 @@ async function saveNavigationData(data: LinkSpaceData, tabId: number): Promise<b
 
   await saveData(data);
   return true;
+}
+
+async function savePageVisit(
+  tabId: number,
+  input: {
+    sessionId: string;
+    fromNodeId: string;
+    url: string;
+    title: string;
+    now: string;
+    isSearchResultClick: boolean;
+  }
+): Promise<{ nodeId: string } | undefined> {
+  const latestData = await loadData();
+  const latestSession = latestData.sessions[input.sessionId];
+  const latestSourceNode = latestData.nodes[input.fromNodeId];
+
+  if (
+    latestData.settings.recordingPaused ||
+    latestSession?.status !== 'active' ||
+    latestSession.tabId !== tabId ||
+    !latestSession.nodeIds.includes(input.fromNodeId) ||
+    latestSourceNode?.sessionId !== input.sessionId
+  ) {
+    sessionByTab.delete(tabId);
+    lastNodeByTab.delete(tabId);
+    return undefined;
+  }
+
+  const result = addPageVisit(latestData, {
+    ...input,
+    isSearchResultClick: latestSourceNode.depth === 0
+  });
+  await saveData(result.data);
+  return { nodeId: result.nodeId };
 }
 
 function isRecordableTransition(
