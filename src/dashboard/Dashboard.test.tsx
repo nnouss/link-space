@@ -18,6 +18,10 @@ class ResizeObserverMock {
 
 globalThis.ResizeObserver = ResizeObserverMock as unknown as typeof ResizeObserver;
 
+type SendMessageMock = {
+  mockResolvedValueOnce: (value: unknown) => SendMessageMock;
+};
+
 describe('Dashboard', () => {
   it('renders analysis-oriented dashboard copy from captured data', async () => {
     const data = createData();
@@ -67,6 +71,41 @@ describe('Dashboard', () => {
     expect(screen.getByText('체류 시간')).toBeTruthy();
     expect(screen.getByText('방문 시각')).toBeTruthy();
     expect(screen.getByText('이전 URL')).toBeTruthy();
+  });
+  it('deletes one session from the session list after inline confirmation', async () => {
+    const data = createData();
+    const sendMessage = chrome.runtime.sendMessage as unknown as SendMessageMock;
+    sendMessage
+      .mockResolvedValueOnce({ ok: true, data })
+      .mockResolvedValueOnce({ ok: true, data: { ...data, sessions: {}, nodes: {}, edges: {} } });
+
+    render(<Dashboard />);
+
+    fireEvent.click(await screen.findByLabelText('세션 삭제: knowledge graph'));
+    fireEvent.click(screen.getByLabelText('세션 삭제 확인: knowledge graph'));
+
+    expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({
+      type: 'DELETE_SESSION',
+      sessionId: 'session-1'
+    });
+  });
+
+  it('deletes every session after inline confirmation', async () => {
+    const data = createData();
+    const sendMessage = chrome.runtime.sendMessage as unknown as SendMessageMock;
+    sendMessage
+      .mockResolvedValueOnce({ ok: true, data })
+      .mockResolvedValueOnce({ ok: true, data: { ...data, sessions: {}, nodes: {}, edges: {} } });
+
+    render(<Dashboard />);
+
+    await screen.findByLabelText('세션 삭제: knowledge graph');
+    fireEvent.click(screen.getByLabelText('모든 세션 삭제'));
+    fireEvent.click(screen.getByLabelText('모든 세션 삭제 확인'));
+
+    expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({
+      type: 'DELETE_ALL_SESSIONS'
+    });
   });
 });
 

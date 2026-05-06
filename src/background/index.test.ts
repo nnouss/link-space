@@ -443,6 +443,83 @@ describe('background navigation collection', () => {
     });
   });
 
+  it('deletes one session through runtime message', async () => {
+    const first = createSearchSession(createEmptyData(), {
+      query: 'delete one',
+      tabId: 1,
+      now: '2026-05-06T00:00:00.000Z'
+    });
+    const second = createSearchSession(first.data, {
+      query: 'keep one',
+      tabId: 2,
+      now: '2026-05-06T00:01:00.000Z'
+    });
+    localStorageMock.get.mockResolvedValue({ linkSpaceData: second.data });
+    localStorageMock.set.mockResolvedValue(undefined);
+
+    await import('./index');
+    const listener = getRuntimeMessageListener();
+    const sendResponse = vi.fn();
+
+    listener(
+      { type: 'DELETE_SESSION', sessionId: first.sessionId },
+      {} as chrome.runtime.MessageSender,
+      sendResponse
+    );
+    await vi.runAllTimersAsync();
+
+    expect(localStorageMock.set).toHaveBeenCalledWith({
+      linkSpaceData: expect.objectContaining({
+        sessions: expect.not.objectContaining({
+          [first.sessionId]: expect.anything()
+        })
+      })
+    });
+    expect(sendResponse).toHaveBeenCalledWith({
+      ok: true,
+      data: expect.objectContaining({
+        sessions: expect.objectContaining({
+          [second.sessionId]: expect.anything()
+        })
+      })
+    });
+  });
+
+  it('deletes all sessions through runtime message', async () => {
+    const created = createSearchSession(createEmptyData(), {
+      query: 'delete all',
+      tabId: 1,
+      now: '2026-05-06T00:00:00.000Z'
+    });
+    localStorageMock.get.mockResolvedValue({ linkSpaceData: created.data });
+    localStorageMock.set.mockResolvedValue(undefined);
+
+    await import('./index');
+    const listener = getRuntimeMessageListener();
+    const sendResponse = vi.fn();
+
+    listener({ type: 'DELETE_ALL_SESSIONS' }, {} as chrome.runtime.MessageSender, sendResponse);
+    await vi.runAllTimersAsync();
+
+    expect(localStorageMock.set).toHaveBeenCalledWith({
+      linkSpaceData: {
+        sessions: {},
+        nodes: {},
+        edges: {},
+        settings: created.data.settings
+      }
+    });
+    expect(sendResponse).toHaveBeenCalledWith({
+      ok: true,
+      data: {
+        sessions: {},
+        nodes: {},
+        edges: {},
+        settings: created.data.settings
+      }
+    });
+  });
+
   it('returns expired sessions as ended on GET_DATA', async () => {
     vi.setSystemTime(new Date('2026-05-06T00:31:00.000Z'));
 

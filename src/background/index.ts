@@ -4,7 +4,13 @@ import {
   createSearchSession,
   endExpiredSessions
 } from '../shared/session';
-import { importLinkSpaceData, loadData, saveData } from '../shared/storage';
+import {
+  deleteAllSearchSessions,
+  deleteSearchSession,
+  importLinkSpaceData,
+  loadData,
+  saveData
+} from '../shared/storage';
 import type { LinkSpaceData, RuntimeMessage, SearchSession } from '../shared/types';
 
 type RuntimeResponse =
@@ -191,6 +197,24 @@ async function handleRuntimeMessage(message: RuntimeMessage): Promise<RuntimeRes
         error: INVALID_DATA_MESSAGE
       };
     }
+  }
+
+  if (message.type === 'DELETE_SESSION') {
+    const data = await loadData();
+    const updatedData = deleteSearchSession(data, message.sessionId);
+    await saveData(updatedData);
+    sessionByTab.clear();
+    currentNodeByTab.clear();
+    return { ok: true, data: updatedData };
+  }
+
+  if (message.type === 'DELETE_ALL_SESSIONS') {
+    const data = await loadData();
+    const updatedData = deleteAllSearchSessions(data);
+    await saveData(updatedData);
+    sessionByTab.clear();
+    currentNodeByTab.clear();
+    return { ok: true, data: updatedData };
   }
 
   return { ok: false, error: 'Unsupported message' };

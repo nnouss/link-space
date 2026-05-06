@@ -46,6 +46,39 @@ export function importLinkSpaceData(text: string): LinkSpaceData {
   return parsed;
 }
 
+export function deleteSearchSession(data: LinkSpaceData, sessionId: string): LinkSpaceData {
+  const session = data.sessions[sessionId];
+  if (!session) {
+    return data;
+  }
+
+  const nodeIds = new Set(session.nodeIds);
+  const edgeIds = new Set(session.edgeIds);
+  const { [sessionId]: _deletedSession, ...sessions } = data.sessions;
+  const nodes = Object.fromEntries(
+    Object.entries(data.nodes).filter(([nodeId]) => !nodeIds.has(nodeId))
+  );
+  const edges = Object.fromEntries(
+    Object.entries(data.edges).filter(([edgeId]) => !edgeIds.has(edgeId))
+  );
+
+  return {
+    ...data,
+    sessions,
+    nodes,
+    edges
+  };
+}
+
+export function deleteAllSearchSessions(data: LinkSpaceData): LinkSpaceData {
+  return {
+    ...data,
+    sessions: {},
+    nodes: {},
+    edges: {}
+  };
+}
+
 function isLinkSpaceData(value: unknown): value is LinkSpaceData {
   if (!isPlainRecord(value)) {
     return false;

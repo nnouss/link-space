@@ -1,4 +1,4 @@
-import { Download, ExternalLink, Search, Upload, X } from 'lucide-react';
+import { Check, Download, ExternalLink, Search, Trash2, Upload, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent, CSSProperties } from 'react';
 import { exportLinkSpaceData, importLinkSpaceData } from '../shared/storage';
@@ -16,7 +16,10 @@ export function Dashboard() {
   const [selectedNode, setSelectedNode] = useState<PageNode | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
+  const [confirmingDeleteSessionId, setConfirmingDeleteSessionId] = useState<string | null>(null);
+  const [isConfirmingDeleteAll, setIsConfirmingDeleteAll] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -64,6 +67,70 @@ export function Dashboard() {
   function selectSession(session: SearchSession) {
     setSelectedSessionId(session.id);
     setSelectedNode(null);
+    setConfirmingDeleteSessionId(null);
+  }
+
+  function applyDeletedData(nextData: LinkSpaceData) {
+    setData(nextData);
+    setSelectedSessionId((currentId) => {
+      if (currentId && nextData.sessions[currentId]) {
+        return currentId;
+      }
+
+      return latestSession(nextData.sessions)?.id ?? null;
+    });
+    setSelectedNode(null);
+  }
+
+  async function deleteSession(session: SearchSession) {
+    if (isDeleting) {
+      return;
+    }
+
+    setIsDeleting(true);
+    setError(null);
+
+    try {
+      const response = await sendRuntimeMessage({ type: 'DELETE_SESSION', sessionId: session.id });
+
+      if (!response?.ok) {
+        setError('세션을 삭제하지 못했습니다. 다시 시도하세요.');
+        return;
+      }
+
+      applyDeletedData(response.data);
+      setConfirmingDeleteSessionId(null);
+    } catch {
+      setError('세션을 삭제하지 못했습니다. 다시 시도하세요.');
+    } finally {
+      setIsDeleting(false);
+    }
+  }
+
+  async function deleteAllSessions() {
+    if (isDeleting || sessions.length === 0) {
+      return;
+    }
+
+    setIsDeleting(true);
+    setError(null);
+
+    try {
+      const response = await sendRuntimeMessage({ type: 'DELETE_ALL_SESSIONS' });
+
+      if (!response?.ok) {
+        setError('전체 세션을 삭제하지 못했습니다. 다시 시도하세요.');
+        return;
+      }
+
+      applyDeletedData(response.data);
+      setConfirmingDeleteSessionId(null);
+      setIsConfirmingDeleteAll(false);
+    } catch {
+      setError('전체 세션을 삭제하지 못했습니다. 다시 시도하세요.');
+    } finally {
+      setIsDeleting(false);
+    }
   }
 
   function exportData() {
@@ -126,7 +193,44 @@ export function Dashboard() {
         <section style={sessionSectionStyle}>
           <div style={sectionHeaderStyle}>
             <h2 style={sectionTitleStyle}>세션</h2>
-            <span style={countPillStyle}>{sessions.length}</span>
+            <div style={sectionActionsStyle}>
+              <span style={countPillStyle}>{sessions.length}</span>
+              {isConfirmingDeleteAll ? (
+                <span style={inlineConfirmStyle}>
+                  <button
+                    type="button"
+                    aria-label="모든 세션 삭제 확인"
+                    onClick={deleteAllSessions}
+                    disabled={isDeleting}
+                    style={dangerConfirmButtonStyle}
+                  >
+                    <Check size={14} aria-hidden="true" />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="모든 세션 삭제 취소"
+                    onClick={() => setIsConfirmingDeleteAll(false)}
+                    disabled={isDeleting}
+                    style={quietIconButtonStyle}
+                  >
+                    <X size={14} aria-hidden="true" />
+                  </button>
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  aria-label="모든 세션 삭제"
+                  onClick={() => setIsConfirmingDeleteAll(true)}
+                  disabled={sessions.length === 0 || isDeleting}
+                  style={{
+                    ...dangerIconButtonStyle,
+                    opacity: sessions.length === 0 || isDeleting ? 0.38 : 1
+                  }}
+                >
+                  <Trash2 size={14} aria-hidden="true" />
+                </button>
+              )}
+            </div>
           </div>
 
           {isLoading ? (
@@ -137,16 +241,19 @@ export function Dashboard() {
                 const isSelected = selectedSessionId === session.id;
 
                 return (
-                  <li key={session.id}>
+                  <li
+                    key={session.id}
+                    style={{
+                      ...sessionItemStyle,
+                      border: isSelected ? `1px solid ${surfaceColors.accent}` : '1px solid transparent',
+                      background: isSelected ? surfaceColors.selectedPanel : surfaceColors.panel
+                    }}
+                  >
                     <button
                       type="button"
                       aria-current={isSelected ? 'true' : undefined}
                       onClick={() => selectSession(session)}
-                      style={{
-                        ...sessionButtonStyle,
-                        borderColor: isSelected ? surfaceColors.accent : 'transparent',
-                        background: isSelected ? surfaceColors.selectedPanel : surfaceColors.panel
-                      }}
+                      style={sessionButtonStyle}
                     >
                       <span style={sessionIconStyle}>
                         <Search size={15} aria-hidden="true" />
@@ -159,6 +266,38 @@ export function Dashboard() {
                       </span>
                       {isSelected ? <span style={selectedMarkerStyle}>선택됨</span> : null}
                     </button>
+                    {confirmingDeleteSessionId === session.id ? (
+                      <span style={rowConfirmStyle}>
+                        <button
+                          type="button"
+                          aria-label={`세션 삭제 확인: ${session.query || '제목 없는 검색'}`}
+                          onClick={() => deleteSession(session)}
+                          disabled={isDeleting}
+                          style={dangerConfirmButtonStyle}
+                        >
+                          <Check size={14} aria-hidden="true" />
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={`세션 삭제 취소: ${session.query || '제목 없는 검색'}`}
+                          onClick={() => setConfirmingDeleteSessionId(null)}
+                          disabled={isDeleting}
+                          style={quietIconButtonStyle}
+                        >
+                          <X size={14} aria-hidden="true" />
+                        </button>
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        aria-label={`세션 삭제: ${session.query || '제목 없는 검색'}`}
+                        onClick={() => setConfirmingDeleteSessionId(session.id)}
+                        disabled={isDeleting}
+                        style={dangerIconButtonStyle}
+                      >
+                        <Trash2 size={14} aria-hidden="true" />
+                      </button>
+                    )}
                   </li>
                 );
               })}
@@ -409,6 +548,12 @@ const countPillStyle = {
   padding: '2px 8px'
 } satisfies CSSProperties;
 
+const sectionActionsStyle = {
+  alignItems: 'center',
+  display: 'inline-flex',
+  gap: 8
+} satisfies CSSProperties;
+
 const sessionListStyle = {
   display: 'grid',
   gap: 8,
@@ -417,20 +562,75 @@ const sessionListStyle = {
   padding: 0
 } satisfies CSSProperties;
 
-const sessionButtonStyle = {
+const sessionItemStyle = {
   alignItems: 'center',
   border: '1px solid transparent',
-  borderRadius: 6,
+  borderRadius: 8,
+  display: 'grid',
+  gap: 4,
+  gridTemplateColumns: 'minmax(0, 1fr) 34px',
+  minHeight: 70,
+  padding: '4px 4px 4px 0'
+} satisfies CSSProperties;
+
+const sessionButtonStyle = {
+  alignItems: 'center',
+  background: 'transparent',
+  border: 0,
   color: surfaceColors.text,
   cursor: 'pointer',
   display: 'grid',
   gap: 10,
   gridTemplateColumns: '30px minmax(0, 1fr)',
-  minHeight: 70,
-  padding: 11,
+  minHeight: 60,
+  padding: '10px 8px 10px 11px',
   position: 'relative',
   textAlign: 'left',
   width: '100%'
+} satisfies CSSProperties;
+
+const dangerIconButtonStyle = {
+  alignItems: 'center',
+  background: 'oklch(25% 0.018 225)',
+  border: '1px solid oklch(34% 0.018 225)',
+  borderRadius: 7,
+  color: 'oklch(69% 0.09 28)',
+  cursor: 'pointer',
+  display: 'inline-flex',
+  height: 30,
+  justifyContent: 'center',
+  width: 30
+} satisfies CSSProperties;
+
+const quietIconButtonStyle = {
+  alignItems: 'center',
+  background: 'oklch(23% 0.016 225)',
+  border: '1px solid oklch(34% 0.018 225)',
+  borderRadius: 7,
+  color: surfaceColors.muted,
+  cursor: 'pointer',
+  display: 'inline-flex',
+  height: 30,
+  justifyContent: 'center',
+  width: 30
+} satisfies CSSProperties;
+
+const dangerConfirmButtonStyle = {
+  ...dangerIconButtonStyle,
+  background: 'oklch(31% 0.055 28)',
+  borderColor: 'oklch(47% 0.08 28)',
+  color: 'oklch(86% 0.055 40)'
+} satisfies CSSProperties;
+
+const inlineConfirmStyle = {
+  alignItems: 'center',
+  display: 'inline-flex',
+  gap: 5
+} satisfies CSSProperties;
+
+const rowConfirmStyle = {
+  ...inlineConfirmStyle,
+  justifySelf: 'end'
 } satisfies CSSProperties;
 
 const sessionIconStyle = {

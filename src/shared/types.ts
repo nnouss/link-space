@@ -53,4 +53,6 @@ export interface LinkSpaceData {
 export type RuntimeMessage =
   | { type: 'GET_DATA' }
   | { type: 'SET_RECORDING_PAUSED'; paused: boolean }
-  | { type: 'IMPORT_DATA'; payload: LinkSpaceData };
+  | { type: 'IMPORT_DATA'; payload: LinkSpaceData }
+  | { type: 'DELETE_SESSION'; sessionId: string }
+  | { type: 'DELETE_ALL_SESSIONS' };

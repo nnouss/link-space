@@ -3,6 +3,8 @@ import { addPageVisit, createSearchSession } from './session';
 import type { LinkSpaceData } from './types';
 import {
   createEmptyData,
+  deleteAllSearchSessions,
+  deleteSearchSession,
   exportLinkSpaceData,
   importLinkSpaceData,
   loadData,
@@ -191,5 +193,56 @@ describe('storage logic', () => {
     };
 
     expect(() => importLinkSpaceData(JSON.stringify(data))).toThrow('Invalid Link Space data');
+  });
+  it('deleteSearchSession removes the selected session and its graph records', () => {
+    const first = createSearchSession(createEmptyData(), {
+      query: 'delete me',
+      tabId: 1,
+      now: '2026-05-06T00:00:00.000Z'
+    });
+    const withVisit = addPageVisit(first.data, {
+      sessionId: first.sessionId,
+      fromNodeId: first.data.sessions[first.sessionId].rootNodeId,
+      url: 'https://example.com/a',
+      title: 'A',
+      now: '2026-05-06T00:01:00.000Z',
+      isSearchResultClick: true
+    });
+    const second = createSearchSession(withVisit.data, {
+      query: 'keep me',
+      tabId: 2,
+      now: '2026-05-06T00:02:00.000Z'
+    });
+
+    const deleted = deleteSearchSession(second.data, first.sessionId);
+
+    expect(deleted.sessions).not.toHaveProperty(first.sessionId);
+    expect(deleted.sessions).toHaveProperty(second.sessionId);
+    expect(deleted.nodes).not.toHaveProperty(first.data.sessions[first.sessionId].rootNodeId);
+    expect(deleted.nodes).not.toHaveProperty(withVisit.nodeId);
+    expect(deleted.edges).not.toHaveProperty(withVisit.data.sessions[first.sessionId].edgeIds[0]);
+    expect(deleted.settings).toEqual(second.data.settings);
+  });
+
+  it('deleteAllSearchSessions clears graph records and preserves settings', () => {
+    const created = createSearchSession(createEmptyData(), {
+      query: 'clear all',
+      tabId: 1,
+      now: '2026-05-06T00:00:00.000Z'
+    });
+    const data = {
+      ...created.data,
+      settings: {
+        ...created.data.settings,
+        recordingPaused: true
+      }
+    };
+
+    expect(deleteAllSearchSessions(data)).toEqual({
+      sessions: {},
+      nodes: {},
+      edges: {},
+      settings: data.settings
+    });
   });
 });
