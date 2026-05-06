@@ -1,7 +1,6 @@
-import { parseGoogleSearch } from '../shared/google';
 import {
   addPageVisit,
-  createSearchSession,
+  createBrowserSession,
   endExpiredSessions
 } from '../shared/session';
 import {
@@ -96,29 +95,6 @@ async function handleNavigation(details: chrome.webNavigation.WebNavigationTrans
     return;
   }
 
-  const parsedSearch = parseGoogleSearch(details.url);
-  if (parsedSearch) {
-    const activeSession = findActiveSessionByTab(data, details.tabId);
-
-    if (!activeSession || activeSession.query !== parsedSearch.query) {
-      data = endActiveSessionsForTab(data, details.tabId, now);
-      const result = createSearchSession(data, {
-        query: parsedSearch.query,
-        tabId: details.tabId,
-        now
-      });
-      data = result.data;
-      sessionByTab.set(details.tabId, result.sessionId);
-      currentNodeByTab.set(details.tabId, data.sessions[result.sessionId].rootNodeId);
-    } else {
-      sessionByTab.set(details.tabId, activeSession.id);
-      currentNodeByTab.set(details.tabId, activeSession.rootNodeId);
-    }
-
-    await saveNavigationData(data, details.tabId);
-    return;
-  }
-
   if (isHistoryNavigation(details)) {
     const restoredData = restoreCurrentNodeFromHistory(data, details.tabId, details.url);
     if (restoredData) {
@@ -142,9 +118,17 @@ async function handleNavigation(details: chrome.webNavigation.WebNavigationTrans
   const source = resolveNavigationSource(data, details.tabId);
 
   if (!source) {
-    if (expirationChanged) {
-      await saveNavigationData(data, details.tabId);
-    }
+    const tab = await chrome.tabs.get(details.tabId);
+    const result = createBrowserSession(data, {
+      url: details.url,
+      title: tab.title || details.url,
+      tabId: details.tabId,
+      now
+    });
+    data = result.data;
+    sessionByTab.set(details.tabId, result.sessionId);
+    currentNodeByTab.set(details.tabId, data.sessions[result.sessionId].rootNodeId);
+    await saveNavigationData(data, details.tabId);
     return;
   }
 

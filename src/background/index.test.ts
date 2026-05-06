@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createSearchSession } from '../shared/session';
+import { createBrowserSession, createSearchSession } from '../shared/session';
 import { createEmptyData } from '../shared/storage';
 import type { LinkSpaceData } from '../shared/types';
 
@@ -102,6 +102,80 @@ describe('background navigation collection', () => {
         })
       })
     });
+  });
+
+  it('starts a browser session from the first page visit in an untracked tab', async () => {
+    vi.setSystemTime(new Date('2026-05-07T00:01:00.000Z'));
+
+    localStorageMock.get.mockResolvedValue({ linkSpaceData: createEmptyData() });
+    localStorageMock.set.mockResolvedValue(undefined);
+    tabsMock.get.mockResolvedValue({ title: 'Example Root' });
+
+    await import('./index');
+    const listener = getNavigationListener();
+
+    listener(createNavigationDetails({ tabId: 31, url: 'https://example.com/root' }));
+    await vi.runAllTimersAsync();
+
+    expect(localStorageMock.set).toHaveBeenCalledWith({
+      linkSpaceData: expect.objectContaining({
+        sessions: expect.objectContaining({
+          'session-1': expect.objectContaining({
+            query: 'Example Root',
+            status: 'active',
+            rootNodeId: 'node-1',
+            currentNodeId: 'node-1',
+            nodeIds: ['node-1'],
+            edgeIds: [],
+            tabId: 31
+          })
+        }),
+        nodes: expect.objectContaining({
+          'node-1': expect.objectContaining({
+            url: 'https://example.com/root',
+            title: 'Example Root',
+            domain: 'example.com',
+            depth: 0,
+            isSearchResultClick: false
+          })
+        })
+      })
+    });
+  });
+
+  it('treats a Google search URL as a normal browser root page', async () => {
+    vi.setSystemTime(new Date('2026-05-07T00:02:00.000Z'));
+
+    localStorageMock.get.mockResolvedValue({ linkSpaceData: createEmptyData() });
+    localStorageMock.set.mockResolvedValue(undefined);
+    tabsMock.get.mockResolvedValue({ title: 'Google Results' });
+
+    await import('./index');
+    const listener = getNavigationListener();
+
+    listener(createNavigationDetails({ tabId: 32, url: 'https://www.google.com/search?q=keyboard' }));
+    await vi.runAllTimersAsync();
+
+    expect(localStorageMock.set).toHaveBeenCalledWith({
+      linkSpaceData: expect.objectContaining({
+        sessions: expect.objectContaining({
+          'session-1': expect.objectContaining({
+            query: 'Google Results',
+            rootNodeId: 'node-1',
+            currentNodeId: 'node-1'
+          })
+        }),
+        nodes: expect.objectContaining({
+          'node-1': expect.objectContaining({
+            url: 'https://www.google.com/search?q=keyboard',
+            title: 'Google Results',
+            domain: 'www.google.com',
+            depth: 0
+          })
+        })
+      })
+    });
+    expect(localStorageMock.set.mock.calls[0][0].linkSpaceData.nodes['node-1'].url).not.toContain('google://search');
   });
 
   it('does not record typed non-Google navigation after a search session and ends the session', async () => {
