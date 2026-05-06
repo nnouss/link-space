@@ -88,6 +88,32 @@ export function addPageVisit(
     throw new Error('Source node does not belong to session');
   }
 
+  const existingNodeId = findExistingChildNodeId(data, session, input.fromNodeId, input.url);
+  if (existingNodeId) {
+    const existingNode = data.nodes[existingNodeId];
+
+    return {
+      data: {
+        ...data,
+        sessions: {
+          ...data.sessions,
+          [input.sessionId]: {
+            ...session,
+            lastActivityAt: input.now
+          }
+        },
+        nodes: {
+          ...data.nodes,
+          [existingNodeId]: {
+            ...existingNode,
+            visitCount: existingNode.visitCount + 1
+          }
+        }
+      },
+      nodeId: existingNodeId
+    };
+  }
+
   const nodeId = createId('node', data.nodes);
   const edgeId = createId('edge', data.edges);
   const node: PageNode = {
@@ -134,6 +160,21 @@ export function addPageVisit(
     },
     nodeId
   };
+}
+
+function findExistingChildNodeId(
+  data: LinkSpaceData,
+  session: SearchSession,
+  fromNodeId: string,
+  url: string
+): string | undefined {
+  return session.edgeIds
+    .map((edgeId) => data.edges[edgeId])
+    .find((edge) => {
+      const targetNode = edge ? data.nodes[edge.toNodeId] : undefined;
+
+      return edge?.fromNodeId === fromNodeId && targetNode?.url === url;
+    })?.toNodeId;
 }
 
 export function endExpiredSessions(data: LinkSpaceData, now: string): LinkSpaceData {

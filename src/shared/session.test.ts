@@ -57,6 +57,40 @@ describe('session logic', () => {
     expect(edge.type).toBe('navigation');
   });
 
+  it('reuses an existing child node when the same link is visited again from the same page', () => {
+    const first = createSearchSession(createEmptyData(), {
+      query: 'first',
+      tabId: 1,
+      now: '2026-05-06T00:00:00.000Z'
+    });
+    const rootNodeId = first.data.sessions[first.sessionId].rootNodeId;
+    const added = addPageVisit(first.data, {
+      sessionId: first.sessionId,
+      fromNodeId: rootNodeId,
+      url: 'https://example.com/a',
+      title: 'A',
+      now: '2026-05-06T00:01:00.000Z',
+      isSearchResultClick: true
+    });
+    const revisited = addPageVisit(added.data, {
+      sessionId: first.sessionId,
+      fromNodeId: rootNodeId,
+      url: 'https://example.com/a',
+      title: 'A again',
+      now: '2026-05-06T00:03:00.000Z',
+      isSearchResultClick: true
+    });
+    const session = revisited.data.sessions[first.sessionId];
+    const node = revisited.data.nodes[added.nodeId];
+
+    expect(revisited.nodeId).toBe(added.nodeId);
+    expect(session.nodeIds).toEqual([rootNodeId, added.nodeId]);
+    expect(session.edgeIds).toHaveLength(1);
+    expect(session.lastActivityAt).toBe('2026-05-06T00:03:00.000Z');
+    expect(node.visitCount).toBe(2);
+    expect(node.title).toBe('A');
+  });
+
   it('throws when adding a page visit to an unknown session', () => {
     expect(() =>
       addPageVisit(createEmptyData(), {
