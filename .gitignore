@@ -1,3 +1,6 @@
 .worktrees/
 node_modules/
 dist/
+docs/
+.agents/
+PRODUCT.md
