@@ -615,6 +615,46 @@ describe('background navigation collection', () => {
     });
   });
 
+  it('does not create a new root when an active page opens a link in a new tab', async () => {
+    vi.setSystemTime(new Date('2026-05-07T00:03:00.000Z'));
+
+    const created = createBrowserSession(createEmptyData(), {
+      url: 'https://namu.wiki/w/keyboard',
+      title: 'Keyboard Wiki',
+      tabId: 41,
+      now: '2026-05-07T00:00:00.000Z'
+    });
+    let currentData: LinkSpaceData = created.data;
+
+    localStorageMock.get.mockImplementation(() => Promise.resolve({ linkSpaceData: currentData }));
+    localStorageMock.set.mockImplementation(({ linkSpaceData }: { linkSpaceData: LinkSpaceData }) => {
+      currentData = linkSpaceData;
+      return Promise.resolve();
+    });
+    tabsMock.get.mockImplementation((tabId: number) =>
+      Promise.resolve({ title: tabId === 42 ? 'Coupang Product' : 'Keyboard Wiki' })
+    );
+
+    await import('./index');
+    const tabCreatedListener = getTabCreatedListener();
+    const navigationListener = getNavigationListener();
+
+    navigationListener(createNavigationDetails({ tabId: 41, url: 'https://namu.wiki/w/keyboard' }));
+    await vi.runAllTimersAsync();
+    tabCreatedListener({ id: 42, openerTabId: 41 } as chrome.tabs.Tab);
+    navigationListener(createNavigationDetails({ tabId: 42, url: 'https://www.coupang.com/vp/products/456' }));
+    await vi.runAllTimersAsync();
+
+    expect(Object.values(currentData.sessions)).toHaveLength(1);
+    expect(currentData.sessions[created.sessionId].nodeIds).toEqual(['node-1', 'node-2']);
+    expect(currentData.nodes['node-2']).toMatchObject({
+      url: 'https://www.coupang.com/vp/products/456',
+      fromUrl: 'https://namu.wiki/w/keyboard',
+      depth: 1,
+      title: 'Coupang Product'
+    });
+  });
+
   it('does not let an in-flight navigation overwrite a pause save', async () => {
     vi.setSystemTime(new Date('2026-05-06T00:14:00.000Z'));
 
