@@ -43,6 +43,7 @@ describe('background navigation collection', () => {
     });
     localStorageMock.get.mockResolvedValue({ linkSpaceData: created.data });
     localStorageMock.set.mockResolvedValue(undefined);
+    tabsMock.get.mockResolvedValue({ title: 'Example Page' });
 
     await import('./index');
     const listener = webNavigationMock.addListener.mock.calls[0][0] as (
@@ -1017,8 +1018,9 @@ describe('background navigation collection', () => {
   it('ends active sessions when recording is paused and does not attach later links after resume', async () => {
     vi.setSystemTime(new Date('2026-05-06T00:12:00.000Z'));
 
-    const created = createSearchSession(createEmptyData(), {
-      query: 'pause privacy',
+    const created = createBrowserSession(createEmptyData(), {
+      url: 'https://example.com/pause',
+      title: 'Pause Privacy',
       tabId: 16,
       now: '2026-05-06T00:00:00.000Z'
     });
@@ -1078,7 +1080,28 @@ describe('background navigation collection', () => {
     );
     await vi.runAllTimersAsync();
 
-    expect(localStorageMock.set).not.toHaveBeenCalled();
+    expect(localStorageMock.set).toHaveBeenCalledWith({
+      linkSpaceData: expect.objectContaining({
+        sessions: expect.objectContaining({
+          [created.sessionId]: expect.objectContaining({
+            status: 'ended'
+          }),
+          'session-2': expect.objectContaining({
+            query: 'Later Link',
+            status: 'active',
+            tabId: 16,
+            rootNodeId: 'node-2'
+          })
+        }),
+        nodes: expect.objectContaining({
+          'node-2': expect.objectContaining({
+            url: 'https://example.com/later',
+            title: 'Later Link',
+            depth: 0
+          })
+        })
+      })
+    });
   });
 
   it('ends active tab session without creating visits when navigation happens while paused', async () => {
@@ -1161,16 +1184,18 @@ describe('background navigation collection', () => {
     });
   });
 
-  it('ends previous active session in the same tab when a new Google search starts', async () => {
-    vi.setSystemTime(new Date('2026-05-06T00:10:00.000Z'));
+  it('adds a Google search page as a child when reached from an active page', async () => {
+    vi.setSystemTime(new Date('2026-05-07T00:05:00.000Z'));
 
-    const first = createSearchSession(createEmptyData(), {
-      query: 'first query',
+    const created = createBrowserSession(createEmptyData(), {
+      url: 'https://example.com/start',
+      title: 'Start Page',
       tabId: 4,
-      now: '2026-05-06T00:00:00.000Z'
+      now: '2026-05-07T00:00:00.000Z'
     });
-    localStorageMock.get.mockResolvedValue({ linkSpaceData: first.data });
+    localStorageMock.get.mockResolvedValue({ linkSpaceData: created.data });
     localStorageMock.set.mockResolvedValue(undefined);
+    tabsMock.get.mockResolvedValue({ title: 'Google Results' });
 
     await import('./index');
     const listener = getNavigationListener();
@@ -1181,57 +1206,61 @@ describe('background navigation collection', () => {
     expect(localStorageMock.set).toHaveBeenCalledWith({
       linkSpaceData: expect.objectContaining({
         sessions: expect.objectContaining({
-          [first.sessionId]: expect.objectContaining({
-            status: 'ended',
-            endedAt: '2026-05-06T00:10:00.000Z'
-          }),
-          'session-2': expect.objectContaining({
-            query: 'second',
+          [created.sessionId]: expect.objectContaining({
             status: 'active',
-            tabId: 4
+            nodeIds: ['node-1', 'node-2'],
+            edgeIds: ['edge-1']
+          })
+        }),
+        nodes: expect.objectContaining({
+          'node-2': expect.objectContaining({
+            url: 'https://www.google.com/search?q=second',
+            title: 'Google Results',
+            fromUrl: 'https://example.com/start'
           })
         })
       })
     });
   });
 
-  it('starts a new Google session when query matches an older active session but not the latest', async () => {
-    vi.setSystemTime(new Date('2026-05-06T00:25:00.000Z'));
+  it('starts an untracked Google search tab as a normal browser root', async () => {
+    vi.setSystemTime(new Date('2026-05-07T00:06:00.000Z'));
 
-    const older = createSearchSession(createEmptyData(), {
-      query: 'A',
+    const existing = createBrowserSession(createEmptyData(), {
+      url: 'https://example.com/existing',
+      title: 'Existing Page',
       tabId: 6,
-      now: '2026-05-06T00:00:00.000Z'
+      now: '2026-05-07T00:00:00.000Z'
     });
-    const newer = createSearchSession(older.data, {
-      query: 'B',
-      tabId: 6,
-      now: '2026-05-06T00:10:00.000Z'
-    });
-    localStorageMock.get.mockResolvedValue({ linkSpaceData: newer.data });
+    localStorageMock.get.mockResolvedValue({ linkSpaceData: existing.data });
     localStorageMock.set.mockResolvedValue(undefined);
+    tabsMock.get.mockResolvedValue({ title: 'Google A' });
 
     await import('./index');
     const listener = getNavigationListener();
 
-    listener(createNavigationDetails({ tabId: 6, url: 'https://www.google.com/search?q=A' }));
+    listener(createNavigationDetails({ tabId: 60, url: 'https://www.google.com/search?q=A' }));
     await vi.runAllTimersAsync();
 
     expect(localStorageMock.set).toHaveBeenCalledWith({
       linkSpaceData: expect.objectContaining({
         sessions: expect.objectContaining({
-          [older.sessionId]: expect.objectContaining({
-            status: 'ended',
-            endedAt: '2026-05-06T00:25:00.000Z'
-          }),
-          [newer.sessionId]: expect.objectContaining({
-            status: 'ended',
-            endedAt: '2026-05-06T00:25:00.000Z'
-          }),
-          'session-3': expect.objectContaining({
-            query: 'A',
+          [existing.sessionId]: expect.objectContaining({
             status: 'active',
             tabId: 6
+          }),
+          'session-2': expect.objectContaining({
+            query: 'Google A',
+            status: 'active',
+            tabId: 60,
+            rootNodeId: 'node-2'
+          })
+        }),
+        nodes: expect.objectContaining({
+          'node-2': expect.objectContaining({
+            url: 'https://www.google.com/search?q=A',
+            title: 'Google A',
+            depth: 0
           })
         })
       })
@@ -1295,6 +1324,7 @@ describe('background navigation collection', () => {
     await import('./index');
     const navigationListener = getNavigationListener();
 
+    tabsMock.get.mockResolvedValue({ title: 'Stale Root' });
     navigationListener(createNavigationDetails({ tabId: 7, url: 'https://www.google.com/search?q=stale' }));
     await vi.runAllTimersAsync();
     localStorageMock.set.mockClear();
@@ -1315,7 +1345,28 @@ describe('background navigation collection', () => {
     navigationListener(createNavigationDetails({ tabId: 7, url: 'https://example.com/stale' }));
     await vi.runAllTimersAsync();
 
-    expect(localStorageMock.set).not.toHaveBeenCalled();
+    expect(localStorageMock.set).toHaveBeenCalledWith({
+      linkSpaceData: expect.objectContaining({
+        sessions: expect.objectContaining({
+          'session-1': expect.objectContaining({
+            tabId: 99
+          }),
+          'session-2': expect.objectContaining({
+            query: 'Should Not Attach',
+            status: 'active',
+            tabId: 7,
+            rootNodeId: 'node-2'
+          })
+        }),
+        nodes: expect.objectContaining({
+          'node-2': expect.objectContaining({
+            url: 'https://example.com/stale',
+            title: 'Should Not Attach',
+            depth: 0
+          })
+        })
+      })
+    });
   });
 });
 
