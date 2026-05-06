@@ -1,7 +1,13 @@
 import { Check, Download, ExternalLink, Search, Trash2, Upload, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent, CSSProperties } from 'react';
-import { exportLinkSpaceData, importLinkSpaceData } from '../shared/storage';
+import {
+  deleteSearchSessions,
+  exportLinkSpaceData,
+  importLinkSpaceData,
+  loadData,
+  saveData
+} from '../shared/storage';
 import type { LinkSpaceData, PageNode, RuntimeMessage, SearchSession } from '../shared/types';
 import { GraphView } from './GraphView';
 
@@ -107,20 +113,7 @@ export function Dashboard() {
     setError(null);
 
     try {
-      let response = await sendRuntimeMessage({
-        type: 'DELETE_SESSIONS',
-        sessionIds: selectedSessionIds
-      });
-
-      if (!response?.ok) {
-        for (const sessionId of selectedSessionIds) {
-          response = await sendRuntimeMessage({ type: 'DELETE_SESSION', sessionId });
-
-          if (!response?.ok) {
-            break;
-          }
-        }
-      }
+      const response = await deleteSessionsWithFallback(selectedSessionIds);
 
       if (!response?.ok) {
         setError('선택한 세션을 삭제하지 못했습니다. 다시 시도하세요.');
@@ -409,6 +402,44 @@ function DetailRow({ label, value }: { label: string; value: string }) {
 
 function sendRuntimeMessage(message: RuntimeMessage): Promise<RuntimeResponse> {
   return chrome.runtime.sendMessage(message);
+}
+
+async function deleteSessionsWithFallback(sessionIds: string[]): Promise<RuntimeResponse> {
+  try {
+    const response = await sendRuntimeMessage({
+      type: 'DELETE_SESSIONS',
+      sessionIds
+    });
+
+    if (response?.ok) {
+      return response;
+    }
+  } catch {
+    // Fall through to the older single-session deletion API.
+  }
+
+  let latestResponse: RuntimeResponse = { ok: false, error: 'Session deletion failed' };
+  for (const sessionId of sessionIds) {
+    try {
+      latestResponse = await sendRuntimeMessage({ type: 'DELETE_SESSION', sessionId });
+
+      if (!latestResponse?.ok) {
+        return deleteSessionsFromLocalStorage(sessionIds);
+      }
+    } catch {
+      return deleteSessionsFromLocalStorage(sessionIds);
+    }
+  }
+
+  return latestResponse;
+}
+
+async function deleteSessionsFromLocalStorage(sessionIds: string[]): Promise<RuntimeResponse> {
+  const data = await loadData();
+  const updatedData = deleteSearchSessions(data, sessionIds);
+  await saveData(updatedData);
+
+  return { ok: true, data: updatedData };
 }
 
 function latestSession(sessions: Record<string, SearchSession>): SearchSession | undefined {

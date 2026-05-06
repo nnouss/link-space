@@ -1,6 +1,7 @@
 import { Check, Network, Pause, Play, Trash2, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
+import { deleteSearchSessions, loadData, saveData } from '../shared/storage';
 import type { LinkSpaceData, RuntimeMessage, SearchSession } from '../shared/types';
 
 type RuntimeResponse =
@@ -82,20 +83,7 @@ export function Popup() {
     setError(null);
 
     try {
-      let response = await sendRuntimeMessage({
-        type: 'DELETE_SESSIONS',
-        sessionIds: selectedSessionIds
-      });
-
-      if (!response?.ok) {
-        for (const sessionId of selectedSessionIds) {
-          response = await sendRuntimeMessage({ type: 'DELETE_SESSION', sessionId });
-
-          if (!response?.ok) {
-            break;
-          }
-        }
-      }
+      const response = await deleteSessionsWithFallback(selectedSessionIds);
 
       if (response.ok) {
         applyDeletedData(response.data);
@@ -300,6 +288,44 @@ function RecentSessionItem({
 
 function sendRuntimeMessage(message: RuntimeMessage): Promise<RuntimeResponse> {
   return chrome.runtime.sendMessage(message);
+}
+
+async function deleteSessionsWithFallback(sessionIds: string[]): Promise<RuntimeResponse> {
+  try {
+    const response = await sendRuntimeMessage({
+      type: 'DELETE_SESSIONS',
+      sessionIds
+    });
+
+    if (response?.ok) {
+      return response;
+    }
+  } catch {
+    // Fall through to the older single-session deletion API.
+  }
+
+  let latestResponse: RuntimeResponse = { ok: false, error: 'Session deletion failed' };
+  for (const sessionId of sessionIds) {
+    try {
+      latestResponse = await sendRuntimeMessage({ type: 'DELETE_SESSION', sessionId });
+
+      if (!latestResponse?.ok) {
+        return deleteSessionsFromLocalStorage(sessionIds);
+      }
+    } catch {
+      return deleteSessionsFromLocalStorage(sessionIds);
+    }
+  }
+
+  return latestResponse;
+}
+
+async function deleteSessionsFromLocalStorage(sessionIds: string[]): Promise<RuntimeResponse> {
+  const data = await loadData();
+  const updatedData = deleteSearchSessions(data, sessionIds);
+  await saveData(updatedData);
+
+  return { ok: true, data: updatedData };
 }
 
 function formatSessionStatus(status: SearchSession['status']): string {

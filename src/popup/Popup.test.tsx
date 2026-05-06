@@ -112,6 +112,64 @@ describe('Popup', () => {
       sessionIds: ['session-1']
     });
   });
+
+  it('falls back to single-session deletion when popup bulk deletion rejects', async () => {
+    const data = createData(false);
+    const sendMessage = chrome.runtime.sendMessage as unknown as {
+      mockResolvedValueOnce: (value: unknown) => typeof sendMessage;
+      mockRejectedValueOnce: (value: unknown) => typeof sendMessage;
+    };
+    sendMessage
+      .mockResolvedValueOnce({ ok: true, data })
+      .mockRejectedValueOnce(new Error('Receiving end does not exist'))
+      .mockResolvedValueOnce({ ok: true, data: { ...data, sessions: {}, nodes: {}, edges: {} } });
+
+    render(<Popup />);
+
+    fireEvent.click(await screen.findByLabelText('세션 선택: impeccable'));
+    fireEvent.click(screen.getByLabelText('선택 세션 삭제'));
+    fireEvent.click(screen.getByLabelText('선택 세션 삭제 확인'));
+
+    await waitFor(() => {
+      expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({
+        type: 'DELETE_SESSION',
+        sessionId: 'session-1'
+      });
+    });
+  });
+
+  it('deletes checked sessions from popup local storage when runtime deletion is unavailable', async () => {
+    const data = createData(false);
+    const sendMessage = chrome.runtime.sendMessage as unknown as {
+      mockResolvedValueOnce: (value: unknown) => typeof sendMessage;
+      mockRejectedValueOnce: (value: unknown) => typeof sendMessage;
+    };
+    const localStorage = chrome.storage.local as unknown as {
+      get: { mockResolvedValueOnce: (value: unknown) => void };
+      set: unknown;
+    };
+    sendMessage
+      .mockResolvedValueOnce({ ok: true, data })
+      .mockRejectedValueOnce(new Error('Receiving end does not exist'))
+      .mockRejectedValueOnce(new Error('Receiving end does not exist'));
+    localStorage.get.mockResolvedValueOnce({ linkSpaceData: data });
+
+    render(<Popup />);
+
+    fireEvent.click(await screen.findByLabelText(/impeccable/));
+    fireEvent.click(screen.getByLabelText('선택 세션 삭제'));
+    fireEvent.click(screen.getByLabelText('선택 세션 삭제 확인'));
+
+    await waitFor(() => {
+      expect(chrome.storage.local.set).toHaveBeenCalledWith({
+        linkSpaceData: expect.objectContaining({
+          sessions: {},
+          nodes: {},
+          edges: {}
+        })
+      });
+    });
+  });
 });
 
 function createData(recordingPaused: boolean): LinkSpaceData {

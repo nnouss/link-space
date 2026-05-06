@@ -20,6 +20,7 @@ globalThis.ResizeObserver = ResizeObserverMock as unknown as typeof ResizeObserv
 
 type SendMessageMock = {
   mockResolvedValueOnce: (value: unknown) => SendMessageMock;
+  mockRejectedValueOnce: (value: unknown) => SendMessageMock;
 };
 
 describe('Dashboard', () => {
@@ -134,6 +135,62 @@ describe('Dashboard', () => {
     expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({
       type: 'DELETE_SESSIONS',
       sessionIds: ['session-1']
+    });
+  });
+
+  it('falls back to single-session deletion when bulk deletion rejects', async () => {
+    const data = createData();
+    const sendMessage = chrome.runtime.sendMessage as unknown as SendMessageMock & {
+      mockRejectedValueOnce: (value: unknown) => SendMessageMock;
+    };
+    sendMessage
+      .mockResolvedValueOnce({ ok: true, data })
+      .mockRejectedValueOnce(new Error('Receiving end does not exist'))
+      .mockResolvedValueOnce({ ok: true, data: { ...data, sessions: {}, nodes: {}, edges: {} } });
+
+    render(<Dashboard />);
+
+    fireEvent.click(await screen.findByLabelText('세션 선택: knowledge graph'));
+    fireEvent.click(screen.getByLabelText('선택 세션 삭제'));
+    fireEvent.click(screen.getByLabelText('선택 세션 삭제 확인'));
+
+    await waitFor(() => {
+      expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({
+        type: 'DELETE_SESSION',
+        sessionId: 'session-1'
+      });
+    });
+  });
+
+  it('deletes checked sessions from local storage when runtime deletion is unavailable', async () => {
+    const data = createData();
+    const sendMessage = chrome.runtime.sendMessage as unknown as SendMessageMock & {
+      mockRejectedValueOnce: (value: unknown) => SendMessageMock;
+    };
+    const localStorage = chrome.storage.local as unknown as {
+      get: { mockResolvedValueOnce: (value: unknown) => void };
+      set: unknown;
+    };
+    sendMessage
+      .mockResolvedValueOnce({ ok: true, data })
+      .mockRejectedValueOnce(new Error('Receiving end does not exist'))
+      .mockRejectedValueOnce(new Error('Receiving end does not exist'));
+    localStorage.get.mockResolvedValueOnce({ linkSpaceData: data });
+
+    render(<Dashboard />);
+
+    fireEvent.click(await screen.findByLabelText(/knowledge graph/));
+    fireEvent.click(screen.getByLabelText('선택 세션 삭제'));
+    fireEvent.click(screen.getByLabelText('선택 세션 삭제 확인'));
+
+    await waitFor(() => {
+      expect(chrome.storage.local.set).toHaveBeenCalledWith({
+        linkSpaceData: expect.objectContaining({
+          sessions: {},
+          nodes: {},
+          edges: {}
+        })
+      });
     });
   });
 });
