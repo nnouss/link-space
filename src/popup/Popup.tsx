@@ -185,9 +185,11 @@ const surfaceColors = {
 
 const containerStyle = {
   background: surfaceColors.page,
+  borderRadius: 10,
   color: surfaceColors.text,
   fontFamily,
   margin: 0,
+  overflow: 'hidden',
   padding: 16,
   width: 336
 } satisfies CSSProperties;
@@ -209,7 +211,7 @@ const brandBlockStyle = {
 const brandMarkStyle = {
   alignItems: 'center',
   background: surfaceColors.accent,
-  borderRadius: 6,
+  borderRadius: 8,
   color: surfaceColors.accentText,
   display: 'inline-flex',
   flex: '0 0 auto',
@@ -259,7 +261,7 @@ const primaryButtonStyle = {
   alignItems: 'center',
   background: surfaceColors.accent,
   border: 0,
-  borderRadius: 6,
+  borderRadius: 8,
   color: surfaceColors.accentText,
   cursor: 'pointer',
   display: 'inline-flex',
@@ -275,7 +277,7 @@ const secondaryButtonStyle = {
   alignItems: 'center',
   background: surfaceColors.panelRaised,
   border: '1px solid transparent',
-  borderRadius: 6,
+  borderRadius: 8,
   color: surfaceColors.text,
   cursor: 'pointer',
   display: 'inline-flex',
@@ -325,7 +327,7 @@ const sessionListStyle = {
 const sessionItemStyle = {
   background: surfaceColors.panel,
   border: `1px solid ${surfaceColors.border}`,
-  borderRadius: 6,
+  borderRadius: 8,
   display: 'grid',
   gap: 7,
   padding: '11px 12px'

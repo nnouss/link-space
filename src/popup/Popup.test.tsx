@@ -21,6 +21,7 @@ describe('Popup', () => {
     expect(screen.getByText('impeccable')).toBeTruthy();
     expect(screen.getByText('3개 노드')).toBeTruthy();
     expect(screen.getByRole('main').style.fontFamily).toContain('Pretendard');
+    expect(screen.getByRole('main').style.borderRadius).toBe('10px');
 
     await waitFor(() => {
       expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({ type: 'GET_DATA' });
