@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { addPageVisit, createSearchSession } from './session';
 import type { LinkSpaceData } from './types';
 import {
   createEmptyData,
@@ -18,19 +19,19 @@ describe('storage logic', () => {
     vi.clearAllMocks();
   });
 
-  it('저장소에 유효한 데이터가 없으면 빈 데이터를 반환한다', async () => {
+  it('저장 데이터가 없으면 빈 데이터를 반환한다', async () => {
     localStorageMock.get.mockResolvedValue({});
 
     await expect(loadData()).resolves.toEqual(createEmptyData());
   });
 
-  it('저장소에 유효하지 않은 데이터가 있으면 빈 데이터를 반환한다', async () => {
+  it('저장 데이터가 유효하지 않으면 빈 데이터를 반환한다', async () => {
     localStorageMock.get.mockResolvedValue({ linkSpaceData: { sessions: [] } });
 
     await expect(loadData()).resolves.toEqual(createEmptyData());
   });
 
-  it('saveData는 chrome.storage.local.set으로 linkSpaceData를 저장한다', async () => {
+  it('saveData는 chrome.storage.local.set에 linkSpaceData를 저장한다', async () => {
     const data = createEmptyData();
     localStorageMock.set.mockResolvedValue(undefined);
 
@@ -45,11 +46,11 @@ describe('storage logic', () => {
     expect(importLinkSpaceData(JSON.stringify(validData))).toEqual(validData);
   });
 
-  it('유효하지 않은 Link Space data면 예외를 던진다', () => {
+  it('유효하지 않은 Link Space data는 거부한다', () => {
     expect(() => importLinkSpaceData('{"sessions":[]}')).toThrow('Invalid Link Space data');
   });
 
-  it('중첩 session 데이터가 유효하지 않으면 예외를 던진다', () => {
+  it('잘못된 session 데이터는 거부한다', () => {
     expect(() =>
       importLinkSpaceData(
         JSON.stringify({
@@ -64,7 +65,7 @@ describe('storage logic', () => {
     ).toThrow('Invalid Link Space data');
   });
 
-  it('sessionTimeoutMinutes가 양수가 아니면 예외를 던진다', () => {
+  it('잘못된 sessionTimeoutMinutes는 거부한다', () => {
     expect(() =>
       importLinkSpaceData(
         JSON.stringify({
@@ -78,11 +79,59 @@ describe('storage logic', () => {
     ).toThrow('Invalid Link Space data');
   });
 
-  it('JSON 파싱에 실패하면 예외를 던진다', () => {
+  it('잘못된 JSON 문자열은 거부한다', () => {
     expect(() => importLinkSpaceData('{bad json')).toThrow('Invalid Link Space data');
   });
 
-  it('exportLinkSpaceData는 보기 좋은 JSON 문자열을 반환한다', () => {
+  it('exportLinkSpaceData는 들여쓰기된 JSON 문자열을 반환한다', () => {
     expect(exportLinkSpaceData(createEmptyData())).toBe(JSON.stringify(createEmptyData(), null, 2));
+  });
+
+  it('rootNodeId가 존재하지 않는 가져오기 데이터는 거부한다', () => {
+    const created = createSearchSession(createEmptyData(), {
+      query: 'broken root',
+      tabId: 1,
+      now: '2026-05-06T00:00:00.000Z'
+    });
+    const data: LinkSpaceData = {
+      ...created.data,
+      sessions: {
+        [created.sessionId]: {
+          ...created.data.sessions[created.sessionId],
+          rootNodeId: 'missing-node'
+        }
+      }
+    };
+
+    expect(() => importLinkSpaceData(JSON.stringify(data))).toThrow('Invalid Link Space data');
+  });
+
+  it('edge endpoint가 존재하지 않는 가져오기 데이터는 거부한다', () => {
+    const created = createSearchSession(createEmptyData(), {
+      query: 'broken edge',
+      tabId: 1,
+      now: '2026-05-06T00:00:00.000Z'
+    });
+    const added = addPageVisit(created.data, {
+      sessionId: created.sessionId,
+      fromNodeId: created.data.sessions[created.sessionId].rootNodeId,
+      url: 'https://example.com',
+      title: 'Example',
+      now: '2026-05-06T00:01:00.000Z',
+      isSearchResultClick: true
+    });
+    const edgeId = added.data.sessions[created.sessionId].edgeIds[0];
+    const data: LinkSpaceData = {
+      ...added.data,
+      edges: {
+        ...added.data.edges,
+        [edgeId]: {
+          ...added.data.edges[edgeId],
+          toNodeId: 'missing-node'
+        }
+      }
+    };
+
+    expect(() => importLinkSpaceData(JSON.stringify(data))).toThrow('Invalid Link Space data');
   });
 });

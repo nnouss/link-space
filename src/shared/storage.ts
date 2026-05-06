@@ -63,8 +63,53 @@ function isLinkSpaceData(value: unknown): value is LinkSpaceData {
     isSettings(value.settings) &&
     Object.values(value.sessions).every(isSearchSession) &&
     Object.values(value.nodes).every(isPageNode) &&
-    Object.values(value.edges).every(isNavigationEdge)
+    Object.values(value.edges).every(isNavigationEdge) &&
+    hasValidGraphReferences(value as unknown as LinkSpaceData)
   );
+}
+
+function hasValidGraphReferences(data: LinkSpaceData): boolean {
+  if (!recordsHaveMatchingIds(data.sessions) || !recordsHaveMatchingIds(data.nodes)) {
+    return false;
+  }
+
+  if (!recordsHaveMatchingIds(data.edges)) {
+    return false;
+  }
+
+  return Object.values(data.sessions).every((session) => {
+    const rootNode = data.nodes[session.rootNodeId];
+    if (!rootNode || rootNode.sessionId !== session.id) {
+      return false;
+    }
+
+    const nodesAreValid = session.nodeIds.every((nodeId) => {
+      const node = data.nodes[nodeId];
+      return Boolean(node && node.sessionId === session.id);
+    });
+
+    const edgesAreValid = session.edgeIds.every((edgeId) => {
+      const edge = data.edges[edgeId];
+      if (!edge || edge.sessionId !== session.id) {
+        return false;
+      }
+
+      const fromNode = data.nodes[edge.fromNodeId];
+      const toNode = data.nodes[edge.toNodeId];
+      return Boolean(
+        fromNode &&
+          toNode &&
+          fromNode.sessionId === session.id &&
+          toNode.sessionId === session.id
+      );
+    });
+
+    return nodesAreValid && edgesAreValid;
+  });
+}
+
+function recordsHaveMatchingIds<T extends { id: string }>(records: Record<string, T>): boolean {
+  return Object.entries(records).every(([recordId, record]) => record.id === recordId);
 }
 
 function isSettings(value: Record<string, unknown>): boolean {
