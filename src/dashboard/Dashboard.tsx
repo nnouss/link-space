@@ -32,12 +32,12 @@ export function Dashboard() {
           setSelectedSessionId(latestSession(response.data.sessions)?.id ?? null);
           setError(null);
         } else {
-          setError('Unable to load captured sessions. Try opening the dashboard again.');
+          setError('저장된 세션을 불러오지 못했습니다. 대시보드를 다시 열어보세요.');
         }
       })
       .catch(() => {
         if (mounted) {
-          setError('Unable to load captured sessions. Try opening the dashboard again.');
+          setError('저장된 세션을 불러오지 못했습니다. 대시보드를 다시 열어보세요.');
         }
       })
       .finally(() => {
@@ -60,8 +60,6 @@ export function Dashboard() {
   }, [data]);
 
   const selectedSession = selectedSessionId && data ? data.sessions[selectedSessionId] ?? null : null;
-  const selectedNodeCount = selectedSession?.nodeIds.length ?? 0;
-  const selectedEdgeCount = selectedSession?.edgeIds.length ?? 0;
 
   function selectSession(session: SearchSession) {
     setSelectedSessionId(session.id);
@@ -98,7 +96,7 @@ export function Dashboard() {
       const response = await sendRuntimeMessage({ type: 'IMPORT_DATA', payload: importedData });
 
       if (!response?.ok) {
-        setError('Import failed. Check the JSON file and try again.');
+        setError('가져오기에 실패했습니다. JSON 파일을 확인한 뒤 다시 시도하세요.');
         return;
       }
 
@@ -106,7 +104,7 @@ export function Dashboard() {
       setSelectedSessionId(latestSession(response.data.sessions)?.id ?? null);
       setSelectedNode(null);
     } catch {
-      setError('Import failed. Select a valid Link Space JSON file.');
+      setError('가져오기에 실패했습니다. 올바른 Link Space JSON 파일을 선택하세요.');
     } finally {
       setIsImporting(false);
     }
@@ -114,30 +112,25 @@ export function Dashboard() {
 
   return (
     <main style={pageStyle}>
-      <aside style={leftPanelStyle} aria-label="Session rail">
+      <aside style={leftPanelStyle} aria-label="세션 목록">
         <div style={brandBlockStyle}>
           <span style={brandMarkStyle}>LS</span>
           <div>
             <h1 style={titleStyle}>Link Space</h1>
-            <p style={subtitleStyle}>Search path analysis</p>
+            <p style={subtitleStyle}>검색 경로 분석</p>
           </div>
         </div>
-
-        <section style={summaryGridStyle} aria-label="Selected session summary">
-          <Metric label="Nodes" value={String(selectedNodeCount)} />
-          <Metric label="Links" value={String(selectedEdgeCount)} />
-        </section>
 
         {error ? <p style={errorTextStyle}>{error}</p> : null}
 
         <section style={sessionSectionStyle}>
           <div style={sectionHeaderStyle}>
-            <h2 style={sectionTitleStyle}>Sessions</h2>
+            <h2 style={sectionTitleStyle}>세션</h2>
             <span style={countPillStyle}>{sessions.length}</span>
           </div>
 
           {isLoading ? (
-            <p style={mutedTextStyle}>Loading captured sessions...</p>
+            <p style={mutedTextStyle}>저장된 세션을 불러오는 중...</p>
           ) : sessions.length > 0 ? (
             <ul style={sessionListStyle}>
               {sessions.map((session) => {
@@ -151,7 +144,7 @@ export function Dashboard() {
                       onClick={() => selectSession(session)}
                       style={{
                         ...sessionButtonStyle,
-                        borderColor: isSelected ? surfaceColors.accent : surfaceColors.borderStrong,
+                        borderColor: isSelected ? surfaceColors.accent : 'transparent',
                         background: isSelected ? surfaceColors.selectedPanel : surfaceColors.panel
                       }}
                     >
@@ -159,22 +152,19 @@ export function Dashboard() {
                         <Search size={15} aria-hidden="true" />
                       </span>
                       <span style={sessionTextStyle}>
-                        <span style={sessionQueryStyle}>{session.query || 'Untitled search'}</span>
+                        <span style={sessionQueryStyle}>{session.query || '제목 없는 검색'}</span>
                         <span style={sessionMetaStyle}>
-                          <span style={statusDotStyle} aria-hidden="true" />
-                          <span>{formatSessionStatus(session.status)}</span>
-                          <span>/ {session.nodeIds.length} nodes</span>
-                          <span>/ {formatShortDate(session.lastActivityAt)}</span>
+                          <span>{formatShortDate(session.lastActivityAt)}</span>
                         </span>
                       </span>
-                      {isSelected ? <span style={selectedMarkerStyle}>Selected</span> : null}
+                      {isSelected ? <span style={selectedMarkerStyle}>선택됨</span> : null}
                     </button>
                   </li>
                 );
               })}
             </ul>
           ) : (
-            <p style={mutedTextStyle}>No captured sessions yet. Start a search with recording enabled.</p>
+            <p style={mutedTextStyle}>저장된 세션이 없습니다. 기록을 켠 뒤 검색을 시작하세요.</p>
           )}
         </section>
       </aside>
@@ -182,11 +172,8 @@ export function Dashboard() {
       <section style={graphPanelStyle}>
         <div style={topBarStyle}>
           <div style={sessionTitleBlockStyle}>
-            <span style={eyebrowStyle}>Current session</span>
-            <strong style={currentQueryStyle}>{selectedSession?.query || 'No session selected'}</strong>
-            <span style={hudMetaStyle}>
-              {selectedNodeCount} nodes / {selectedEdgeCount} links
-            </span>
+            <span style={eyebrowStyle}>현재 세션</span>
+            <strong style={currentQueryStyle}>{selectedSession?.query || '선택된 세션 없음'}</strong>
           </div>
           <div style={toolbarStyle}>
             <button
@@ -196,7 +183,7 @@ export function Dashboard() {
               style={{ ...toolbarButtonStyle, opacity: data ? 1 : 0.48 }}
             >
               <Download size={16} aria-hidden="true" />
-              Export
+              내보내기
             </button>
             <button
               type="button"
@@ -205,7 +192,7 @@ export function Dashboard() {
               style={{ ...toolbarButtonStyle, opacity: isImporting ? 0.56 : 1 }}
             >
               <Upload size={16} aria-hidden="true" />
-              Import
+              가져오기
             </button>
             <input
               ref={fileInputRef}
@@ -228,7 +215,7 @@ export function Dashboard() {
       {selectedNode ? (
         <button
           type="button"
-          aria-label="Close node detail"
+          aria-label="노드 상세 닫기"
           onClick={() => setSelectedNode(null)}
           style={drawerBackdropStyle}
         />
@@ -237,10 +224,10 @@ export function Dashboard() {
       <aside style={{ ...drawerStyle, transform: selectedNode ? 'translateX(0)' : 'translateX(100%)' }}>
         <div style={drawerHeaderStyle}>
           <div>
-            <span style={eyebrowStyle}>Node detail</span>
-            <h2 style={drawerTitleStyle}>{selectedNode?.domain ?? 'No node selected'}</h2>
+            <span style={eyebrowStyle}>노드 상세</span>
+            <h2 style={drawerTitleStyle}>{selectedNode?.domain ?? '선택된 노드 없음'}</h2>
           </div>
-          <button type="button" aria-label="Close node detail" onClick={() => setSelectedNode(null)} style={iconButtonStyle}>
+          <button type="button" aria-label="노드 상세 닫기" onClick={() => setSelectedNode(null)} style={iconButtonStyle}>
             <X size={18} aria-hidden="true" />
           </button>
         </div>
@@ -257,25 +244,16 @@ export function Dashboard() {
             </section>
 
             <dl style={detailsListStyle}>
-              <DetailRow label="Depth" value={String(selectedNode.depth)} />
-              <DetailRow label="Visit count" value={String(selectedNode.visitCount)} />
-              <DetailRow label="Dwell time" value={formatDwellTime(selectedNode.dwellTime)} />
-              <DetailRow label="Visited at" value={formatLongDate(selectedNode.visitedAt)} />
-              <DetailRow label="From URL" value={selectedNode.fromUrl ?? '-'} />
+              <DetailRow label="깊이" value={String(selectedNode.depth)} />
+              <DetailRow label="방문 횟수" value={String(selectedNode.visitCount)} />
+              <DetailRow label="체류 시간" value={formatDwellTime(selectedNode.dwellTime)} />
+              <DetailRow label="방문 시각" value={formatLongDate(selectedNode.visitedAt)} />
+              <DetailRow label="이전 URL" value={selectedNode.fromUrl ?? '-'} />
             </dl>
           </div>
         ) : null}
       </aside>
     </main>
-  );
-}
-
-function Metric({ label, value }: { label: string; value: string }) {
-  return (
-    <div style={metricStyle}>
-      <span style={metricValueStyle}>{value}</span>
-      <span style={metricLabelStyle}>{label}</span>
-    </div>
   );
 }
 
@@ -300,10 +278,6 @@ function latestSession(sessions: Record<string, SearchSession>): SearchSession |
 
 function sessionTime(session: SearchSession): number {
   return new Date(session.lastActivityAt || session.startedAt).getTime();
-}
-
-function formatSessionStatus(status: SearchSession['status']): string {
-  return status === 'active' ? 'Active' : 'Completed';
 }
 
 function formatDwellTime(dwellTime: number): string {
@@ -363,13 +337,13 @@ const pageStyle = {
   display: 'grid',
   fontFamily,
   gridTemplateColumns: '280px minmax(0, 1fr)',
-  height: '100vh',
+  height: '100dvh',
+  maxHeight: '100dvh',
   overflow: 'hidden'
 } satisfies CSSProperties;
 
 const leftPanelStyle = {
   background: surfaceColors.rail,
-  borderRight: `1px solid ${surfaceColors.border}`,
   padding: '18px 16px',
   overflowY: 'auto',
   zIndex: 3
@@ -406,37 +380,8 @@ const subtitleStyle = {
   margin: '3px 0 0'
 } satisfies CSSProperties;
 
-const summaryGridStyle = {
-  display: 'grid',
-  gap: 8,
-  gridTemplateColumns: '1fr 1fr',
-  marginTop: 20
-} satisfies CSSProperties;
-
-const metricStyle = {
-  background: surfaceColors.panel,
-  border: `1px solid ${surfaceColors.border}`,
-  borderRadius: 6,
-  display: 'grid',
-  gap: 2,
-  padding: '10px 12px'
-} satisfies CSSProperties;
-
-const metricValueStyle = {
-  fontSize: 18,
-  fontWeight: 800,
-  lineHeight: 1.1
-} satisfies CSSProperties;
-
-const metricLabelStyle = {
-  color: surfaceColors.dim,
-  fontSize: 11,
-  fontWeight: 700,
-  textTransform: 'uppercase'
-} satisfies CSSProperties;
-
 const sessionSectionStyle = {
-  marginTop: 22
+  marginTop: 30
 } satisfies CSSProperties;
 
 const sectionHeaderStyle = {
@@ -457,7 +402,6 @@ const sectionTitleStyle = {
 
 const countPillStyle = {
   background: surfaceColors.panel,
-  border: `1px solid ${surfaceColors.border}`,
   borderRadius: 999,
   color: surfaceColors.muted,
   fontSize: 12,
@@ -474,7 +418,7 @@ const sessionListStyle = {
 
 const sessionButtonStyle = {
   alignItems: 'center',
-  border: `1px solid ${surfaceColors.borderStrong}`,
+  border: '1px solid transparent',
   borderRadius: 6,
   color: surfaceColors.text,
   cursor: 'pointer',
@@ -524,23 +468,13 @@ const sessionMetaStyle = {
   whiteSpace: 'nowrap'
 } satisfies CSSProperties;
 
-const statusDotStyle = {
-  background: surfaceColors.accent,
-  borderRadius: 999,
-  display: 'inline-block',
-  flex: '0 0 auto',
-  height: 6,
-  width: 6
-} satisfies CSSProperties;
-
 const selectedMarkerStyle = {
   color: surfaceColors.accent,
   fontSize: 10,
   fontWeight: 800,
   position: 'absolute',
   right: 10,
-  top: 8,
-  textTransform: 'uppercase'
+  top: 8
 } satisfies CSSProperties;
 
 const graphPanelStyle = {
@@ -562,7 +496,6 @@ const topBarStyle = {
 
 const sessionTitleBlockStyle = {
   background: 'oklch(19% 0.014 225 / 88%)',
-  border: `1px solid ${surfaceColors.border}`,
   borderRadius: 6,
   boxShadow: '0 18px 44px oklch(10% 0.01 225 / 38%)',
   display: 'grid',
@@ -588,11 +521,6 @@ const currentQueryStyle = {
   whiteSpace: 'nowrap'
 } satisfies CSSProperties;
 
-const hudMetaStyle = {
-  color: surfaceColors.dim,
-  fontSize: 12
-} satisfies CSSProperties;
-
 const toolbarStyle = {
   display: 'flex',
   gap: 8
@@ -601,7 +529,7 @@ const toolbarStyle = {
 const toolbarButtonStyle = {
   alignItems: 'center',
   background: 'oklch(20% 0.015 225 / 92%)',
-  border: `1px solid ${surfaceColors.borderStrong}`,
+  border: '1px solid transparent',
   borderRadius: 6,
   color: surfaceColors.text,
   cursor: 'pointer',
@@ -628,7 +556,6 @@ const drawerBackdropStyle = {
 
 const drawerStyle = {
   background: surfaceColors.rail,
-  borderLeft: `1px solid ${surfaceColors.borderStrong}`,
   bottom: 0,
   boxShadow: '-24px 0 60px oklch(10% 0.01 225 / 45%)',
   display: 'grid',
@@ -645,7 +572,6 @@ const drawerStyle = {
 
 const drawerHeaderStyle = {
   alignItems: 'center',
-  borderBottom: `1px solid ${surfaceColors.border}`,
   display: 'flex',
   justifyContent: 'space-between',
   padding: '20px 20px 16px'
@@ -662,7 +588,7 @@ const drawerTitleStyle = {
 const iconButtonStyle = {
   alignItems: 'center',
   background: surfaceColors.panel,
-  border: `1px solid ${surfaceColors.borderStrong}`,
+  border: '1px solid transparent',
   borderRadius: 6,
   color: surfaceColors.text,
   cursor: 'pointer',
@@ -680,7 +606,6 @@ const drawerContentStyle = {
 } satisfies CSSProperties;
 
 const nodeSummaryStyle = {
-  borderBottom: `1px solid ${surfaceColors.border}`,
   display: 'grid',
   gap: 12,
   paddingBottom: 16
@@ -722,7 +647,7 @@ const detailsListStyle = {
 } satisfies CSSProperties;
 
 const detailRowStyle = {
-  borderBottom: `1px solid ${surfaceColors.border}`,
+  borderBottom: '1px solid oklch(24% 0.015 225)',
   display: 'grid',
   gap: 5,
   minWidth: 0,

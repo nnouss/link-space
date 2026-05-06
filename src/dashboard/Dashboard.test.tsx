@@ -24,14 +24,17 @@ describe('Dashboard', () => {
 
     render(<Dashboard />);
 
-    expect(await screen.findByText('Search path analysis')).toBeTruthy();
-    expect(screen.getByText('Sessions')).toBeTruthy();
-    expect(screen.getByText('Current session')).toBeTruthy();
-    expect(screen.getByText('Export')).toBeTruthy();
-    expect(screen.getByText('Import')).toBeTruthy();
-    expect(screen.getByText('Active')).toBeTruthy();
-    expect(screen.getByText('Nodes')).toBeTruthy();
-    expect(screen.getByText('Links')).toBeTruthy();
+    expect(await screen.findByText('검색 경로 분석')).toBeTruthy();
+    expect(screen.getByText('세션')).toBeTruthy();
+    expect(screen.getByText('현재 세션')).toBeTruthy();
+    expect(screen.getByText('내보내기')).toBeTruthy();
+    expect(screen.getByText('가져오기')).toBeTruthy();
+    expect(screen.getByText('선택됨')).toBeTruthy();
+    expect(screen.queryByText('Active')).toBeNull();
+    expect(screen.queryByText('Completed')).toBeNull();
+    expect(screen.queryByText('Nodes')).toBeNull();
+    expect(screen.queryByText('Links')).toBeNull();
+    expect(screen.queryByText(/nodes \/.*links/)).toBeNull();
 
     await waitFor(() => {
       expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({ type: 'GET_DATA' });
