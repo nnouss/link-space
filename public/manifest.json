@@ -1,0 +1,17 @@
+{
+  "manifest_version": 3,
+  "name": "Link Space",
+  "version": "0.1.0",
+  "description": "Google 검색에서 시작된 탐색 흐름을 3D 링크 맵으로 저장하고 복기합니다.",
+  "permissions": ["storage", "tabs", "webNavigation"],
+  "host_permissions": ["https://www.google.com/*", "https://www.google.co.kr/*", "<all_urls>"],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Link Space"
+  },
+  "options_page": "index.html"
+}
