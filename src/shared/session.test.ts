@@ -58,6 +58,63 @@ describe('session logic', () => {
     expect(edge.type).toBe('navigation');
   });
 
+  it('존재하지 않는 sessionId로 페이지 방문을 추가하면 예외를 던진다', () => {
+    expect(() =>
+      addPageVisit(createEmptyData(), {
+        sessionId: 'missing-session',
+        fromNodeId: 'missing-node',
+        url: 'https://example.com/a',
+        title: 'A',
+        now: '2026-05-06T00:01:00.000Z',
+        isSearchResultClick: true
+      })
+    ).toThrow('Unknown session');
+  });
+
+  it('존재하지 않는 fromNodeId로 페이지 방문을 추가하면 예외를 던진다', () => {
+    const first = createSearchSession(createEmptyData(), {
+      query: 'first',
+      tabId: 1,
+      now: '2026-05-06T00:00:00.000Z'
+    });
+
+    expect(() =>
+      addPageVisit(first.data, {
+        sessionId: first.sessionId,
+        fromNodeId: 'missing-node',
+        url: 'https://example.com/a',
+        title: 'A',
+        now: '2026-05-06T00:01:00.000Z',
+        isSearchResultClick: true
+      })
+    ).toThrow('Unknown source node');
+  });
+
+  it('다른 세션의 source node로 페이지 방문을 추가하면 예외를 던진다', () => {
+    const first = createSearchSession(createEmptyData(), {
+      query: 'first',
+      tabId: 1,
+      now: '2026-05-06T00:00:00.000Z'
+    });
+    const second = createSearchSession(first.data, {
+      query: 'second',
+      tabId: 2,
+      now: '2026-05-06T00:02:00.000Z'
+    });
+    const firstRootNodeId = second.data.sessions[first.sessionId].rootNodeId;
+
+    expect(() =>
+      addPageVisit(second.data, {
+        sessionId: second.sessionId,
+        fromNodeId: firstRootNodeId,
+        url: 'https://example.com/a',
+        title: 'A',
+        now: '2026-05-06T00:03:00.000Z',
+        isSearchResultClick: true
+      })
+    ).toThrow('Source node does not belong to session');
+  });
+
   it('30분보다 오래 비활성인 세션을 종료한다', () => {
     const first = createSearchSession(createEmptyData(), {
       query: 'first',

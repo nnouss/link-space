@@ -49,6 +49,35 @@ describe('storage logic', () => {
     expect(() => importLinkSpaceData('{"sessions":[]}')).toThrow('Invalid Link Space data');
   });
 
+  it('중첩 session 데이터가 유효하지 않으면 예외를 던진다', () => {
+    expect(() =>
+      importLinkSpaceData(
+        JSON.stringify({
+          ...createEmptyData(),
+          sessions: {
+            bad: {
+              nodeIds: 'not-array'
+            }
+          }
+        })
+      )
+    ).toThrow('Invalid Link Space data');
+  });
+
+  it('sessionTimeoutMinutes가 양수가 아니면 예외를 던진다', () => {
+    expect(() =>
+      importLinkSpaceData(
+        JSON.stringify({
+          ...createEmptyData(),
+          settings: {
+            recordingPaused: false,
+            sessionTimeoutMinutes: -1
+          }
+        })
+      )
+    ).toThrow('Invalid Link Space data');
+  });
+
   it('JSON 파싱에 실패하면 예외를 던진다', () => {
     expect(() => importLinkSpaceData('{bad json')).toThrow('Invalid Link Space data');
   });

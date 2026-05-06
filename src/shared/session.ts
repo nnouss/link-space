@@ -77,8 +77,16 @@ export function addPageVisit(
   const session = data.sessions[input.sessionId];
   const fromNode = data.nodes[input.fromNodeId];
 
-  if (!session || !fromNode) {
-    throw new Error('Invalid session graph reference');
+  if (!session) {
+    throw new Error('Unknown session');
+  }
+
+  if (!fromNode) {
+    throw new Error('Unknown source node');
+  }
+
+  if (fromNode.sessionId !== input.sessionId || !session.nodeIds.includes(input.fromNodeId)) {
+    throw new Error('Source node does not belong to session');
   }
 
   const nodeId = createId('node', data.nodes);
