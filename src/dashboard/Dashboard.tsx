@@ -339,6 +339,7 @@ export function Dashboard() {
           session={selectedSession}
           nodes={data?.nodes ?? {}}
           edges={data?.edges ?? {}}
+          selectedNodeId={selectedNode?.id}
           onSelectNode={setSelectedNode}
         />
       </section>
@@ -378,7 +379,6 @@ export function Dashboard() {
             <dl style={detailsListStyle}>
               <DetailRow label="깊이" value={String(selectedNode.depth)} />
               <DetailRow label="방문 횟수" value={String(selectedNode.visitCount)} />
-              <DetailRow label="체류 시간" value={formatDwellTime(selectedNode.dwellTime)} />
               <DetailRow label="방문 시각" value={formatLongDate(selectedNode.visitedAt)} />
               <DetailRow label="이전 URL" value={selectedNode.fromUrl ?? '-'} />
             </dl>
@@ -448,17 +448,6 @@ function latestSession(sessions: Record<string, SearchSession>): SearchSession |
 
 function sessionTime(session: SearchSession): number {
   return new Date(session.lastActivityAt || session.startedAt).getTime();
-}
-
-function formatDwellTime(dwellTime: number): string {
-  const seconds = Math.round(dwellTime / 1000);
-  if (seconds < 60) {
-    return `${seconds}s`;
-  }
-
-  const minutes = Math.floor(seconds / 60);
-  const remainingSeconds = seconds % 60;
-  return remainingSeconds ? `${minutes}m ${remainingSeconds}s` : `${minutes}m`;
 }
 
 function formatShortDate(value: string): string {

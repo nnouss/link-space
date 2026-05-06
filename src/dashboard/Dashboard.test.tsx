@@ -69,7 +69,7 @@ describe('Dashboard', () => {
     expect(screen.getByText('기본 정보')).toBeTruthy();
     expect(screen.getByText('깊이')).toBeTruthy();
     expect(screen.getByText('방문 횟수')).toBeTruthy();
-    expect(screen.getByText('체류 시간')).toBeTruthy();
+    expect(screen.queryByText('체류 시간')).toBeNull();
     expect(screen.getByText('방문 시각')).toBeTruthy();
     expect(screen.getByText('이전 URL')).toBeTruthy();
   });
@@ -218,7 +218,6 @@ function createData(): LinkSpaceData {
         title: 'Example Page',
         domain: 'example.com',
         visitedAt: '2026-05-06T00:01:00.000Z',
-        dwellTime: 30_000,
         visitCount: 1,
         depth: 0,
         isSearchResultClick: true

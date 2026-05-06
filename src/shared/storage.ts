@@ -231,7 +231,6 @@ function isPageNode(value: unknown): value is PageNode {
     isString(value.domain) &&
     isString(value.visitedAt) &&
     isOptionalString(value.fromUrl) &&
-    isNonNegativeFiniteNumber(value.dwellTime) &&
     isNonNegativeFiniteNumber(value.visitCount) &&
     isNonNegativeFiniteNumber(value.depth) &&
     typeof value.isSearchResultClick === 'boolean'

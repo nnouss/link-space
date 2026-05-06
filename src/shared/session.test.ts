@@ -3,7 +3,7 @@ import { addPageVisit, createSearchSession, endExpiredSessions, shouldStartNewSe
 import { createEmptyData } from './storage';
 
 describe('session logic', () => {
-  it('검색어 root node와 active session을 생성한다', () => {
+  it('creates an active session with a root search node', () => {
     const result = createSearchSession(createEmptyData(), {
       query: 'three graph',
       tabId: 7,
@@ -22,11 +22,10 @@ describe('session logic', () => {
     expect(root.domain).toBe('google.search');
     expect(root.depth).toBe(0);
     expect(root.visitCount).toBe(1);
-    expect(root.dwellTime).toBe(0);
     expect(root.isSearchResultClick).toBe(false);
   });
 
-  it('페이지 방문을 node와 edge로 추가한다', () => {
+  it('adds a page visit as a node and edge', () => {
     const first = createSearchSession(createEmptyData(), {
       query: 'first',
       tabId: 1,
@@ -58,7 +57,7 @@ describe('session logic', () => {
     expect(edge.type).toBe('navigation');
   });
 
-  it('존재하지 않는 sessionId로 페이지 방문을 추가하면 예외를 던진다', () => {
+  it('throws when adding a page visit to an unknown session', () => {
     expect(() =>
       addPageVisit(createEmptyData(), {
         sessionId: 'missing-session',
@@ -71,7 +70,7 @@ describe('session logic', () => {
     ).toThrow('Unknown session');
   });
 
-  it('존재하지 않는 fromNodeId로 페이지 방문을 추가하면 예외를 던진다', () => {
+  it('throws when adding a page visit from an unknown source node', () => {
     const first = createSearchSession(createEmptyData(), {
       query: 'first',
       tabId: 1,
@@ -90,7 +89,7 @@ describe('session logic', () => {
     ).toThrow('Unknown source node');
   });
 
-  it('다른 세션의 source node로 페이지 방문을 추가하면 예외를 던진다', () => {
+  it('throws when the source node belongs to another session', () => {
     const first = createSearchSession(createEmptyData(), {
       query: 'first',
       tabId: 1,
@@ -115,7 +114,7 @@ describe('session logic', () => {
     ).toThrow('Source node does not belong to session');
   });
 
-  it('30분보다 오래 비활성인 세션을 종료한다', () => {
+  it('ends inactive sessions after the configured timeout', () => {
     const first = createSearchSession(createEmptyData(), {
       query: 'first',
       tabId: 1,
@@ -127,7 +126,7 @@ describe('session logic', () => {
     expect(expired.sessions[first.sessionId].endedAt).toBe('2026-05-06T00:31:00.000Z');
   });
 
-  it('새 검색어가 기존 active session과 다르면 새 세션을 시작해야 한다', () => {
+  it('starts a new session when the search query changes', () => {
     const first = createSearchSession(createEmptyData(), {
       query: 'first',
       tabId: 1,

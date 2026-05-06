@@ -23,7 +23,6 @@ export interface PageNode {
   domain: string;
   visitedAt: string;
   fromUrl?: string;
-  dwellTime: number;
   visitCount: number;
   depth: number;
   isSearchResultClick: boolean;

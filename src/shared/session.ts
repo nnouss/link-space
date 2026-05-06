@@ -28,7 +28,6 @@ export function createSearchSession(
     title: input.query,
     domain: 'google.search',
     visitedAt: input.now,
-    dwellTime: 0,
     visitCount: 1,
     depth: 0,
     isSearchResultClick: false
@@ -99,7 +98,6 @@ export function addPageVisit(
     domain: parseDomain(input.url),
     visitedAt: input.now,
     fromUrl: fromNode.url,
-    dwellTime: 0,
     visitCount: 1,
     depth: fromNode.depth + 1,
     isSearchResultClick: input.isSearchResultClick

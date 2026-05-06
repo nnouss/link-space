@@ -48,27 +48,43 @@ describe('GraphView graph data', () => {
     ]);
   });
 
-  it('derives node value and color from depth, visit count, and dwell time', () => {
+  it('derives node value, color, and root marker without dwell time', () => {
     const session = createSession({
-      nodeIds: ['deep-node'],
+      nodeIds: ['root', 'deep-node'],
       edgeIds: []
     });
-    const node = createNode({
+    const rootNode = createNode({
+      id: 'root',
+      domain: 'google.search',
+      title: 'graph',
+      visitCount: 1
+    });
+    const deepNode = createNode({
       id: 'deep-node',
       depth: 2,
-      visitCount: 3,
-      dwellTime: 60_000
+      visitCount: 3
     });
 
-    const graphData = toGraphData(session, { 'deep-node': node }, {});
+    const graphData = toGraphData(session, { root: rootNode, 'deep-node': deepNode }, {});
 
     expect(graphData.nodes[0]).toMatchObject({
-      id: 'deep-node',
-      page: node,
-      title: 'Page deep-node',
-      color: '#9da9e8'
+      id: 'root',
+      page: rootNode,
+      title: 'graph',
+      color: '#7de6bd',
+      isRoot: true,
+      label: 'google.search / graph'
     });
-    expect(graphData.nodes[0].value).toBeCloseTo(5.8);
+    expect(graphData.nodes[0].value).toBeCloseTo(4.2);
+    expect(graphData.nodes[1]).toMatchObject({
+      id: 'deep-node',
+      page: deepNode,
+      title: 'Page deep-node',
+      color: '#9da9e8',
+      isRoot: false,
+      label: 'example.com/deep-node'
+    });
+    expect(graphData.nodes[1].value).toBeCloseTo(3.5);
   });
 
   it('uses node colors that Three.js can parse without falling back', () => {
@@ -90,9 +106,25 @@ describe('GraphView graph data', () => {
     const parsedColors = graphData.nodes.map((node) => new Color(node.color).getHexString());
 
     expect(warnSpy).not.toHaveBeenCalled();
-    expect(parsedColors).toEqual(['54c7a1', '6fb8da', '9da9e8']);
+    expect(parsedColors).toEqual(['7de6bd', '6fb8da', '9da9e8']);
 
     warnSpy.mockRestore();
+  });
+
+  it('keeps graph labels stable when a stored node url is not parseable', () => {
+    const session = createSession({
+      nodeIds: ['node-with-odd-url'],
+      edgeIds: []
+    });
+    const node = createNode({
+      id: 'node-with-odd-url',
+      url: 'not a browser url',
+      domain: 'unknown'
+    });
+
+    const graphData = toGraphData(session, { 'node-with-odd-url': node }, {});
+
+    expect(graphData.nodes[0].label).toBe('unknown / Page node-with-odd-url');
   });
 });
 
@@ -122,7 +154,6 @@ function createNode(overrides: Partial<PageNode>): PageNode {
     title: `Page ${id}`,
     domain: 'example.com',
     visitedAt: '2026-05-06T00:00:00.000Z',
-    dwellTime: 0,
     visitCount: 1,
     depth: 0,
     isSearchResultClick: false,
