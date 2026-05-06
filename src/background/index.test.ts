@@ -98,7 +98,7 @@ describe('background navigation collection', () => {
     });
   });
 
-  it('does not record typed non-Google navigation after a search session', async () => {
+  it('does not record typed non-Google navigation after a search session and ends the session', async () => {
     vi.setSystemTime(new Date('2026-05-06T00:06:00.000Z'));
 
     const created = createSearchSession(createEmptyData(), {
@@ -117,7 +117,71 @@ describe('background navigation collection', () => {
       createNavigationDetails({
         tabId: 11,
         url: 'https://sensitive.example/page',
-        transitionType: 'typed'
+        transitionType: 'typed',
+        transitionQualifiers: ['server_redirect']
+      })
+    );
+    await vi.runAllTimersAsync();
+
+    expect(localStorageMock.set).toHaveBeenCalledWith({
+      linkSpaceData: expect.objectContaining({
+        sessions: expect.objectContaining({
+          [created.sessionId]: expect.objectContaining({
+            status: 'ended',
+            endedAt: '2026-05-06T00:06:00.000Z',
+            nodeIds: ['node-1']
+          })
+        }),
+        nodes: expect.not.objectContaining({
+          'node-2': expect.anything()
+        })
+      })
+    });
+  });
+
+  it('does not attach a later link navigation after typed navigation ended the session', async () => {
+    vi.setSystemTime(new Date('2026-05-06T00:06:00.000Z'));
+
+    const created = createSearchSession(createEmptyData(), {
+      query: 'typed then link',
+      tabId: 15,
+      now: '2026-05-06T00:00:00.000Z'
+    });
+    const endedData = {
+      ...created.data,
+      sessions: {
+        [created.sessionId]: {
+          ...created.data.sessions[created.sessionId],
+          status: 'ended' as const,
+          endedAt: '2026-05-06T00:06:00.000Z'
+        }
+      }
+    };
+
+    localStorageMock.get.mockResolvedValueOnce({ linkSpaceData: created.data });
+    localStorageMock.set.mockResolvedValue(undefined);
+    tabsMock.get.mockResolvedValue({ title: 'Later Link' });
+
+    await import('./index');
+    const listener = getNavigationListener();
+
+    listener(
+      createNavigationDetails({
+        tabId: 15,
+        url: 'https://sensitive.example/page',
+        transitionType: 'typed',
+        transitionQualifiers: ['server_redirect']
+      })
+    );
+    await vi.runAllTimersAsync();
+    localStorageMock.set.mockClear();
+    localStorageMock.get.mockResolvedValue({ linkSpaceData: endedData });
+
+    listener(
+      createNavigationDetails({
+        tabId: 15,
+        url: 'https://example.com/later',
+        transitionType: 'link'
       })
     );
     await vi.runAllTimersAsync();

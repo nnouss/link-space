@@ -14,6 +14,13 @@ type RuntimeResponse =
 const INVALID_DATA_MESSAGE = 'Invalid Link Space data';
 const RECORDABLE_TRANSITION_TYPES = new Set(['link', 'form_submit', 'reload']);
 const REDIRECT_QUALIFIERS = new Set(['server_redirect', 'client_redirect']);
+const DIRECT_TRANSITION_TYPES = new Set([
+  'typed',
+  'auto_bookmark',
+  'generated',
+  'keyword',
+  'keyword_generated'
+]);
 const sessionByTab = new Map<number, string>();
 const lastNodeByTab = new Map<number, string>();
 const navigationQueueByTab = new Map<number, Promise<void>>();
@@ -92,9 +99,10 @@ async function handleNavigation(details: chrome.webNavigation.WebNavigationTrans
   }
 
   if (!isRecordableTransition(details)) {
+    data = endActiveSessionsForTab(data, details.tabId, now);
     sessionByTab.delete(details.tabId);
     lastNodeByTab.delete(details.tabId);
-    if (expirationChanged) {
+    if (expirationChanged || hasSessionEndChanges(loadedData, data)) {
       await saveData(data);
     }
     return;
@@ -178,6 +186,10 @@ async function handleTabRemoved(tabId: number) {
 function isRecordableTransition(
   details: chrome.webNavigation.WebNavigationTransitionCallbackDetails
 ): boolean {
+  if (DIRECT_TRANSITION_TYPES.has(details.transitionType)) {
+    return false;
+  }
+
   return (
     RECORDABLE_TRANSITION_TYPES.has(details.transitionType) ||
     details.transitionQualifiers.some((qualifier) => REDIRECT_QUALIFIERS.has(qualifier))
@@ -271,6 +283,10 @@ function endActiveSessionsForTab(data: LinkSpaceData, tabId: number, now: string
 }
 
 function hasExpirationChanges(previous: LinkSpaceData, next: LinkSpaceData): boolean {
+  return hasSessionEndChanges(previous, next);
+}
+
+function hasSessionEndChanges(previous: LinkSpaceData, next: LinkSpaceData): boolean {
   return Object.keys(previous.sessions).some((sessionId) => {
     const previousSession = previous.sessions[sessionId];
     const nextSession = next.sessions[sessionId];
