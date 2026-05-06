@@ -31,6 +31,7 @@ const DIRECT_TRANSITION_TYPES = new Set([
 const sessionByTab = new Map<number, string>();
 const currentNodeByTab = new Map<number, string>();
 const navigationQueueByTab = new Map<number, Promise<void>>();
+let recordingStateVersion = 0;
 
 chrome.webNavigation.onCommitted.addListener((details) => {
   enqueueNavigation(details);
@@ -81,6 +82,7 @@ async function handleNavigation(details: chrome.webNavigation.WebNavigationTrans
   }
 
   const now = new Date().toISOString();
+  const recordingStateVersionAtStart = recordingStateVersion;
   const loadedData = await loadData();
   let data = endExpiredSessions(loadedData, now);
   const expirationChanged = hasExpirationChanges(loadedData, data);
@@ -119,7 +121,15 @@ async function handleNavigation(details: chrome.webNavigation.WebNavigationTrans
 
   if (!source) {
     const tab = await chrome.tabs.get(details.tabId);
-    const result = createBrowserSession(data, {
+    const latestData = endExpiredSessions(await loadData(), now);
+
+    if (latestData.settings.recordingPaused || recordingStateVersionAtStart !== recordingStateVersion) {
+      sessionByTab.delete(details.tabId);
+      currentNodeByTab.delete(details.tabId);
+      return;
+    }
+
+    const result = createBrowserSession(latestData, {
       url: details.url,
       title: tab.title || details.url,
       tabId: details.tabId,
@@ -165,6 +175,7 @@ async function handleRuntimeMessage(message: RuntimeMessage): Promise<RuntimeRes
   }
 
   if (message.type === 'SET_RECORDING_PAUSED') {
+    recordingStateVersion += 1;
     const now = new Date().toISOString();
     const data = await loadData();
     let updatedData: LinkSpaceData = {

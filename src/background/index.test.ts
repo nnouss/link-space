@@ -178,6 +178,60 @@ describe('background navigation collection', () => {
     expect(localStorageMock.set.mock.calls[0][0].linkSpaceData.nodes['node-1'].url).not.toContain('google://search');
   });
 
+  it('does not start an untracked root session after pause and quick resume while tab title is pending', async () => {
+    vi.setSystemTime(new Date('2026-05-07T00:03:00.000Z'));
+
+    let currentData: LinkSpaceData = createEmptyData();
+    let resolveTab: (tab: { title: string }) => void = () => undefined;
+    const pendingTab = new Promise<{ title: string }>((resolve) => {
+      resolveTab = resolve;
+    });
+
+    localStorageMock.get.mockImplementation(() => Promise.resolve({ linkSpaceData: currentData }));
+    localStorageMock.set.mockImplementation(({ linkSpaceData }: { linkSpaceData: LinkSpaceData }) => {
+      currentData = linkSpaceData;
+      return Promise.resolve();
+    });
+    tabsMock.get.mockReturnValue(pendingTab);
+
+    await import('./index');
+    const navigationListener = getNavigationListener();
+    const messageListener = getRuntimeMessageListener();
+    const sendResponse = vi.fn();
+
+    navigationListener(createNavigationDetails({ tabId: 33, url: 'https://example.com/root-race' }));
+    await vi.waitFor(() => {
+      expect(tabsMock.get).toHaveBeenCalledWith(33);
+    });
+
+    messageListener(
+      { type: 'SET_RECORDING_PAUSED', paused: true },
+      {} as chrome.runtime.MessageSender,
+      sendResponse
+    );
+    await vi.runAllTimersAsync();
+    sendResponse.mockClear();
+
+    messageListener(
+      { type: 'SET_RECORDING_PAUSED', paused: false },
+      {} as chrome.runtime.MessageSender,
+      sendResponse
+    );
+    await vi.runAllTimersAsync();
+
+    expect(currentData.settings.recordingPaused).toBe(false);
+    expect(currentData.sessions).toEqual({});
+    expect(currentData.nodes).toEqual({});
+
+    localStorageMock.set.mockClear();
+    resolveTab({ title: 'Late Root' });
+    await vi.runAllTimersAsync();
+
+    expect(localStorageMock.set).not.toHaveBeenCalled();
+    expect(currentData.sessions).toEqual({});
+    expect(currentData.nodes).toEqual({});
+  });
+
   it('does not record typed non-Google navigation after a search session and ends the session', async () => {
     vi.setSystemTime(new Date('2026-05-06T00:06:00.000Z'));
 
