@@ -128,6 +128,13 @@ function hasValidGraphReferences(data: LinkSpaceData): boolean {
       return false;
     }
 
+    if (session.currentNodeId) {
+      const currentNode = data.nodes[session.currentNodeId];
+      if (!currentNode || currentNode.sessionId !== session.id || !session.nodeIds.includes(session.currentNodeId)) {
+        return false;
+      }
+    }
+
     const nodesAreValid = session.nodeIds.every((nodeId) => {
       const node = data.nodes[nodeId];
       return Boolean(node && node.sessionId === session.id);
@@ -211,6 +218,7 @@ function isSearchSession(value: unknown): value is SearchSession {
     isString(value.lastActivityAt) &&
     (value.status === 'active' || value.status === 'ended') &&
     isString(value.rootNodeId) &&
+    isOptionalString(value.currentNodeId) &&
     isStringArray(value.nodeIds) &&
     isStringArray(value.edgeIds) &&
     isOptionalString(value.endedAt) &&

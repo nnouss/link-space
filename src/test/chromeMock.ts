@@ -12,6 +12,7 @@ globalThis.chrome = {
   tabs: {
     create: vi.fn(),
     get: vi.fn(),
+    onCreated: { addListener: vi.fn() },
     onRemoved: { addListener: vi.fn() },
     query: vi.fn()
   },
@@ -21,6 +22,7 @@ globalThis.chrome = {
     sendMessage: vi.fn()
   },
   webNavigation: {
-    onCommitted: { addListener: vi.fn() }
+    onCommitted: { addListener: vi.fn() },
+    onHistoryStateUpdated: { addListener: vi.fn() }
   }
 } as unknown as typeof chrome;

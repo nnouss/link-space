@@ -37,9 +37,17 @@ chrome.webNavigation.onCommitted.addListener((details) => {
   enqueueNavigation(details);
 });
 
+chrome.webNavigation.onHistoryStateUpdated.addListener((details) => {
+  enqueueNavigation(details);
+});
+
 chrome.runtime.onMessage.addListener((message: RuntimeMessage, _sender, sendResponse) => {
   void handleRuntimeMessage(message).then(sendResponse);
   return true;
+});
+
+chrome.tabs.onCreated.addListener((tab) => {
+  inheritNavigationStateFromOpener(tab);
 });
 
 chrome.tabs.onRemoved.addListener((tabId) => {
@@ -112,8 +120,10 @@ async function handleNavigation(details: chrome.webNavigation.WebNavigationTrans
   }
 
   if (isHistoryNavigation(details)) {
-    restoreCurrentNodeFromHistory(data, details.tabId, details.url);
-    if (expirationChanged) {
+    const restoredData = restoreCurrentNodeFromHistory(data, details.tabId, details.url);
+    if (restoredData) {
+      await saveNavigationData(restoredData, details.tabId);
+    } else if (expirationChanged) {
       await saveNavigationData(data, details.tabId);
     }
     return;
@@ -135,6 +145,12 @@ async function handleNavigation(details: chrome.webNavigation.WebNavigationTrans
     if (expirationChanged) {
       await saveNavigationData(data, details.tabId);
     }
+    return;
+  }
+
+  const restoredData = restoreExistingSessionNodeForNavigation(data, source.sessionId, details.tabId, details.url);
+  if (restoredData) {
+    await saveNavigationData(restoredData, details.tabId);
     return;
   }
 
@@ -269,7 +285,7 @@ async function savePageVisit(
   if (
     latestData.settings.recordingPaused ||
     latestSession?.status !== 'active' ||
-    latestSession.tabId !== tabId ||
+    (latestSession.tabId !== tabId && sessionByTab.get(tabId) !== input.sessionId) ||
     !latestSession.nodeIds.includes(input.fromNodeId) ||
     latestSourceNode?.sessionId !== input.sessionId
   ) {
@@ -284,6 +300,21 @@ async function savePageVisit(
   });
   await saveData(result.data);
   return { nodeId: result.nodeId };
+}
+
+function inheritNavigationStateFromOpener(tab: chrome.tabs.Tab) {
+  if (typeof tab.id !== 'number' || typeof tab.openerTabId !== 'number') {
+    return;
+  }
+
+  const openerSessionId = sessionByTab.get(tab.openerTabId);
+  const openerNodeId = currentNodeByTab.get(tab.openerTabId);
+  if (!openerSessionId || !openerNodeId) {
+    return;
+  }
+
+  sessionByTab.set(tab.id, openerSessionId);
+  currentNodeByTab.set(tab.id, openerNodeId);
 }
 
 function isHistoryNavigation(
@@ -324,7 +355,7 @@ function resolveNavigationSource(
     trackedSessionId &&
     trackedNodeId &&
     trackedSession?.status === 'active' &&
-    trackedSession.tabId === tabId &&
+    (trackedSession.tabId === tabId || sessionByTab.get(tabId) === trackedSessionId) &&
     trackedNode
   ) {
     return {
@@ -339,7 +370,7 @@ function resolveNavigationSource(
     return undefined;
   }
 
-  const fallbackNodeId = fallbackSession.nodeIds.at(-1) ?? fallbackSession.rootNodeId;
+  const fallbackNodeId = fallbackSession.currentNodeId ?? fallbackSession.nodeIds.at(-1) ?? fallbackSession.rootNodeId;
   const fallbackNode = data.nodes[fallbackNodeId] ?? data.nodes[fallbackSession.rootNodeId];
   if (!fallbackNode) {
     return undefined;
@@ -355,22 +386,56 @@ function resolveNavigationSource(
   };
 }
 
-function restoreCurrentNodeFromHistory(data: LinkSpaceData, tabId: number, url: string): boolean {
+function restoreCurrentNodeFromHistory(data: LinkSpaceData, tabId: number, url: string): LinkSpaceData | undefined {
   const session = findActiveSessionByTab(data, tabId);
   if (!session) {
     sessionByTab.delete(tabId);
     currentNodeByTab.delete(tabId);
-    return false;
+    return undefined;
   }
 
   const node = findLatestSessionNodeByUrl(data, session, url);
   if (!node) {
-    return false;
+    return undefined;
   }
 
   sessionByTab.set(tabId, session.id);
   currentNodeByTab.set(tabId, node.id);
-  return true;
+  return setSessionCurrentNode(data, session.id, node.id);
+}
+
+function restoreExistingSessionNodeForNavigation(
+  data: LinkSpaceData,
+  sessionId: string,
+  tabId: number,
+  url: string
+): LinkSpaceData | undefined {
+  const session = data.sessions[sessionId];
+  if (!session || session.status !== 'active' || session.tabId !== tabId) {
+    return undefined;
+  }
+
+  const node = findLatestSessionNodeByUrl(data, session, url);
+  if (!node) {
+    return undefined;
+  }
+
+  sessionByTab.set(tabId, session.id);
+  currentNodeByTab.set(tabId, node.id);
+  return setSessionCurrentNode(data, session.id, node.id);
+}
+
+function setSessionCurrentNode(data: LinkSpaceData, sessionId: string, nodeId: string): LinkSpaceData {
+  return {
+    ...data,
+    sessions: {
+      ...data.sessions,
+      [sessionId]: {
+        ...data.sessions[sessionId],
+        currentNodeId: nodeId
+      }
+    }
+  };
 }
 
 function findLatestSessionNodeByUrl(
