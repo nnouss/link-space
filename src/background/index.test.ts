@@ -17,6 +17,7 @@ const runtimeMessageMock = chrome.runtime.onMessage as unknown as {
 
 const tabsMock = chrome.tabs as unknown as {
   get: ReturnType<typeof vi.fn>;
+  onRemoved: { addListener: ReturnType<typeof vi.fn> };
 };
 
 describe('background navigation collection', () => {
@@ -97,6 +98,68 @@ describe('background navigation collection', () => {
     });
   });
 
+  it('does not record typed non-Google navigation after a search session', async () => {
+    vi.setSystemTime(new Date('2026-05-06T00:06:00.000Z'));
+
+    const created = createSearchSession(createEmptyData(), {
+      query: 'private typed',
+      tabId: 11,
+      now: '2026-05-06T00:00:00.000Z'
+    });
+    localStorageMock.get.mockResolvedValue({ linkSpaceData: created.data });
+    localStorageMock.set.mockResolvedValue(undefined);
+    tabsMock.get.mockResolvedValue({ title: 'Typed Page' });
+
+    await import('./index');
+    const listener = getNavigationListener();
+
+    listener(
+      createNavigationDetails({
+        tabId: 11,
+        url: 'https://sensitive.example/page',
+        transitionType: 'typed'
+      })
+    );
+    await vi.runAllTimersAsync();
+
+    expect(localStorageMock.set).not.toHaveBeenCalled();
+  });
+
+  it('records link non-Google navigation after a search session', async () => {
+    vi.setSystemTime(new Date('2026-05-06T00:06:00.000Z'));
+
+    const created = createSearchSession(createEmptyData(), {
+      query: 'link click',
+      tabId: 12,
+      now: '2026-05-06T00:00:00.000Z'
+    });
+    localStorageMock.get.mockResolvedValue({ linkSpaceData: created.data });
+    localStorageMock.set.mockResolvedValue(undefined);
+    tabsMock.get.mockResolvedValue({ title: 'Linked Page' });
+
+    await import('./index');
+    const listener = getNavigationListener();
+
+    listener(
+      createNavigationDetails({
+        tabId: 12,
+        url: 'https://example.com/link',
+        transitionType: 'link'
+      })
+    );
+    await vi.runAllTimersAsync();
+
+    expect(localStorageMock.set).toHaveBeenCalledWith({
+      linkSpaceData: expect.objectContaining({
+        sessions: expect.objectContaining({
+          [created.sessionId]: expect.objectContaining({
+            nodeIds: ['node-1', 'node-2']
+          })
+        })
+      })
+    });
+  });
+
   it('rejects invalid imported data without saving', async () => {
     localStorageMock.set.mockResolvedValue(undefined);
 
@@ -119,6 +182,75 @@ describe('background navigation collection', () => {
     expect(sendResponse).toHaveBeenCalledWith({
       ok: false,
       error: 'Invalid Link Space data'
+    });
+  });
+
+  it('returns expired sessions as ended on GET_DATA', async () => {
+    vi.setSystemTime(new Date('2026-05-06T00:31:00.000Z'));
+
+    const created = createSearchSession(createEmptyData(), {
+      query: 'expired get data',
+      tabId: 13,
+      now: '2026-05-06T00:00:00.000Z'
+    });
+    localStorageMock.get.mockResolvedValue({ linkSpaceData: created.data });
+    localStorageMock.set.mockResolvedValue(undefined);
+
+    await import('./index');
+    const listener = getRuntimeMessageListener();
+    const sendResponse = vi.fn();
+
+    listener({ type: 'GET_DATA' }, {} as chrome.runtime.MessageSender, sendResponse);
+    await vi.runAllTimersAsync();
+
+    expect(localStorageMock.set).toHaveBeenCalledWith({
+      linkSpaceData: expect.objectContaining({
+        sessions: expect.objectContaining({
+          [created.sessionId]: expect.objectContaining({
+            status: 'ended',
+            endedAt: '2026-05-06T00:31:00.000Z'
+          })
+        })
+      })
+    });
+    expect(sendResponse).toHaveBeenCalledWith({
+      ok: true,
+      data: expect.objectContaining({
+        sessions: expect.objectContaining({
+          [created.sessionId]: expect.objectContaining({
+            status: 'ended'
+          })
+        })
+      })
+    });
+  });
+
+  it('ends active sessions for a tab when the tab is closed', async () => {
+    vi.setSystemTime(new Date('2026-05-06T00:09:00.000Z'));
+
+    const created = createSearchSession(createEmptyData(), {
+      query: 'tab close',
+      tabId: 14,
+      now: '2026-05-06T00:00:00.000Z'
+    });
+    localStorageMock.get.mockResolvedValue({ linkSpaceData: created.data });
+    localStorageMock.set.mockResolvedValue(undefined);
+
+    await import('./index');
+    const listener = tabsMock.onRemoved.addListener.mock.calls[0][0] as (tabId: number) => void;
+
+    listener(14);
+    await vi.runAllTimersAsync();
+
+    expect(localStorageMock.set).toHaveBeenCalledWith({
+      linkSpaceData: expect.objectContaining({
+        sessions: expect.objectContaining({
+          [created.sessionId]: expect.objectContaining({
+            status: 'ended',
+            endedAt: '2026-05-06T00:09:00.000Z'
+          })
+        })
+      })
     });
   });
 
@@ -281,10 +413,10 @@ describe('background navigation collection', () => {
 });
 
 function getNavigationListener(): (
-  details: chrome.webNavigation.WebNavigationFramedCallbackDetails
+  details: chrome.webNavigation.WebNavigationTransitionCallbackDetails
 ) => void {
   return webNavigationMock.addListener.mock.calls[0][0] as (
-    details: chrome.webNavigation.WebNavigationFramedCallbackDetails
+    details: chrome.webNavigation.WebNavigationTransitionCallbackDetails
   ) => void;
 }
 
@@ -302,11 +434,15 @@ function getRuntimeMessageListener(): (
 
 function createNavigationDetails({
   tabId,
-  url
+  url,
+  transitionType = 'link',
+  transitionQualifiers = []
 }: {
   tabId: number;
   url: string;
-}): chrome.webNavigation.WebNavigationFramedCallbackDetails {
+  transitionType?: chrome.webNavigation.WebNavigationTransitionCallbackDetails['transitionType'];
+  transitionQualifiers?: chrome.webNavigation.WebNavigationTransitionCallbackDetails['transitionQualifiers'];
+}): chrome.webNavigation.WebNavigationTransitionCallbackDetails {
   return {
     frameId: 0,
     tabId,
@@ -316,6 +452,8 @@ function createNavigationDetails({
     documentLifecycle: 'active',
     frameType: 'outermost_frame',
     processId: 1,
-    parentFrameId: -1
+    parentFrameId: -1,
+    transitionType,
+    transitionQualifiers
   };
 }

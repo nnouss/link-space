@@ -12,6 +12,7 @@ globalThis.chrome = {
   tabs: {
     create: vi.fn(),
     get: vi.fn(),
+    onRemoved: { addListener: vi.fn() },
     query: vi.fn()
   },
   runtime: {

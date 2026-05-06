@@ -12,6 +12,8 @@ type RuntimeResponse =
   | { ok: false; error: string };
 
 const INVALID_DATA_MESSAGE = 'Invalid Link Space data';
+const RECORDABLE_TRANSITION_TYPES = new Set(['link', 'form_submit', 'reload']);
+const REDIRECT_QUALIFIERS = new Set(['server_redirect', 'client_redirect']);
 const sessionByTab = new Map<number, string>();
 const lastNodeByTab = new Map<number, string>();
 const navigationQueueByTab = new Map<number, Promise<void>>();
@@ -25,7 +27,11 @@ chrome.runtime.onMessage.addListener((message: RuntimeMessage, _sender, sendResp
   return true;
 });
 
-function enqueueNavigation(details: chrome.webNavigation.WebNavigationFramedCallbackDetails) {
+chrome.tabs.onRemoved.addListener((tabId) => {
+  void handleTabRemoved(tabId);
+});
+
+function enqueueNavigation(details: chrome.webNavigation.WebNavigationTransitionCallbackDetails) {
   if (details.frameId !== 0 || details.tabId < 0) {
     return;
   }
@@ -47,7 +53,7 @@ function enqueueNavigation(details: chrome.webNavigation.WebNavigationFramedCall
   });
 }
 
-async function handleNavigation(details: chrome.webNavigation.WebNavigationFramedCallbackDetails) {
+async function handleNavigation(details: chrome.webNavigation.WebNavigationTransitionCallbackDetails) {
   if (details.frameId !== 0 || details.tabId < 0) {
     return;
   }
@@ -85,6 +91,15 @@ async function handleNavigation(details: chrome.webNavigation.WebNavigationFrame
     return;
   }
 
+  if (!isRecordableTransition(details)) {
+    sessionByTab.delete(details.tabId);
+    lastNodeByTab.delete(details.tabId);
+    if (expirationChanged) {
+      await saveData(data);
+    }
+    return;
+  }
+
   const source = resolveNavigationSource(data, details.tabId);
 
   if (!source) {
@@ -110,7 +125,13 @@ async function handleNavigation(details: chrome.webNavigation.WebNavigationFrame
 
 async function handleRuntimeMessage(message: RuntimeMessage): Promise<RuntimeResponse> {
   if (message.type === 'GET_DATA') {
-    return { ok: true, data: await loadData() };
+    const now = new Date().toISOString();
+    const loadedData = await loadData();
+    const data = endExpiredSessions(loadedData, now);
+    if (hasExpirationChanges(loadedData, data)) {
+      await saveData(data);
+    }
+    return { ok: true, data };
   }
 
   if (message.type === 'SET_RECORDING_PAUSED') {
@@ -143,6 +164,24 @@ async function handleRuntimeMessage(message: RuntimeMessage): Promise<RuntimeRes
   }
 
   return { ok: false, error: 'Unsupported message' };
+}
+
+async function handleTabRemoved(tabId: number) {
+  const now = new Date().toISOString();
+  const data = endActiveSessionsForTab(await loadData(), tabId, now);
+
+  sessionByTab.delete(tabId);
+  lastNodeByTab.delete(tabId);
+  await saveData(data);
+}
+
+function isRecordableTransition(
+  details: chrome.webNavigation.WebNavigationTransitionCallbackDetails
+): boolean {
+  return (
+    RECORDABLE_TRANSITION_TYPES.has(details.transitionType) ||
+    details.transitionQualifiers.some((qualifier) => REDIRECT_QUALIFIERS.has(qualifier))
+  );
 }
 
 function resolveNavigationSource(
