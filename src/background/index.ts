@@ -99,7 +99,7 @@ async function handleNavigation(details: chrome.webNavigation.WebNavigationTrans
       lastNodeByTab.set(details.tabId, activeSession.rootNodeId);
     }
 
-    await saveData(data);
+    await saveNavigationData(data, details.tabId);
     return;
   }
 
@@ -108,7 +108,7 @@ async function handleNavigation(details: chrome.webNavigation.WebNavigationTrans
     sessionByTab.delete(details.tabId);
     lastNodeByTab.delete(details.tabId);
     if (expirationChanged || hasSessionEndChanges(loadedData, data)) {
-      await saveData(data);
+      await saveNavigationData(data, details.tabId);
     }
     return;
   }
@@ -117,7 +117,7 @@ async function handleNavigation(details: chrome.webNavigation.WebNavigationTrans
 
   if (!source) {
     if (expirationChanged) {
-      await saveData(data);
+      await saveNavigationData(data, details.tabId);
     }
     return;
   }
@@ -132,8 +132,10 @@ async function handleNavigation(details: chrome.webNavigation.WebNavigationTrans
     isSearchResultClick: source.fromNode.depth === 0
   });
 
-  lastNodeByTab.set(details.tabId, result.nodeId);
-  await saveData(result.data);
+  const saved = await saveNavigationData(result.data, details.tabId);
+  if (saved) {
+    lastNodeByTab.set(details.tabId, result.nodeId);
+  }
 }
 
 async function handleRuntimeMessage(message: RuntimeMessage): Promise<RuntimeResponse> {
@@ -193,6 +195,18 @@ async function handleTabRemoved(tabId: number) {
   sessionByTab.delete(tabId);
   lastNodeByTab.delete(tabId);
   await saveData(data);
+}
+
+async function saveNavigationData(data: LinkSpaceData, tabId: number): Promise<boolean> {
+  const latestData = await loadData();
+  if (latestData.settings.recordingPaused) {
+    sessionByTab.delete(tabId);
+    lastNodeByTab.delete(tabId);
+    return false;
+  }
+
+  await saveData(data);
+  return true;
 }
 
 function isRecordableTransition(
