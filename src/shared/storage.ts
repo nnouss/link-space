@@ -77,6 +77,10 @@ function hasValidGraphReferences(data: LinkSpaceData): boolean {
     return false;
   }
 
+  if (!allNodesAreOwnedByExactlyOneSession(data) || !allEdgesAreOwnedByExactlyOneSession(data)) {
+    return false;
+  }
+
   return Object.values(data.sessions).every((session) => {
     const rootNode = data.nodes[session.rootNodeId];
     if (!rootNode || rootNode.sessionId !== session.id) {
@@ -105,6 +109,40 @@ function hasValidGraphReferences(data: LinkSpaceData): boolean {
     });
 
     return nodesAreValid && edgesAreValid;
+  });
+}
+
+function allNodesAreOwnedByExactlyOneSession(data: LinkSpaceData): boolean {
+  const ownershipCount = new Map<string, number>();
+
+  for (const session of Object.values(data.sessions)) {
+    for (const nodeId of session.nodeIds) {
+      ownershipCount.set(nodeId, (ownershipCount.get(nodeId) ?? 0) + 1);
+    }
+  }
+
+  return Object.values(data.nodes).every((node) => {
+    const ownerSession = data.sessions[node.sessionId];
+    return Boolean(
+      ownerSession && ownerSession.nodeIds.includes(node.id) && ownershipCount.get(node.id) === 1
+    );
+  });
+}
+
+function allEdgesAreOwnedByExactlyOneSession(data: LinkSpaceData): boolean {
+  const ownershipCount = new Map<string, number>();
+
+  for (const session of Object.values(data.sessions)) {
+    for (const edgeId of session.edgeIds) {
+      ownershipCount.set(edgeId, (ownershipCount.get(edgeId) ?? 0) + 1);
+    }
+  }
+
+  return Object.values(data.edges).every((edge) => {
+    const ownerSession = data.sessions[edge.sessionId];
+    return Boolean(
+      ownerSession && ownerSession.edgeIds.includes(edge.id) && ownershipCount.get(edge.id) === 1
+    );
   });
 }
 

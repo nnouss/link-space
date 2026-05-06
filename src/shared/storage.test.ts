@@ -134,4 +134,62 @@ describe('storage logic', () => {
 
     expect(() => importLinkSpaceData(JSON.stringify(data))).toThrow('Invalid Link Space data');
   });
+
+  it('session.nodeIds에 없는 orphan node는 거부한다', () => {
+    const created = createSearchSession(createEmptyData(), {
+      query: 'orphan node',
+      tabId: 1,
+      now: '2026-05-06T00:00:00.000Z'
+    });
+    const data: LinkSpaceData = {
+      ...created.data,
+      nodes: {
+        ...created.data.nodes,
+        'node-2': {
+          ...created.data.nodes[created.data.sessions[created.sessionId].rootNodeId],
+          id: 'node-2',
+          url: 'https://example.com/orphan',
+          title: 'Orphan',
+          domain: 'example.com',
+          depth: 1
+        }
+      }
+    };
+
+    expect(() => importLinkSpaceData(JSON.stringify(data))).toThrow('Invalid Link Space data');
+  });
+
+  it('session.edgeIds에 없는 orphan edge는 거부한다', () => {
+    const created = createSearchSession(createEmptyData(), {
+      query: 'orphan edge',
+      tabId: 1,
+      now: '2026-05-06T00:00:00.000Z'
+    });
+    const added = addPageVisit(created.data, {
+      sessionId: created.sessionId,
+      fromNodeId: created.data.sessions[created.sessionId].rootNodeId,
+      url: 'https://example.com',
+      title: 'Example',
+      now: '2026-05-06T00:01:00.000Z',
+      isSearchResultClick: true
+    });
+    const edgeId = added.data.sessions[created.sessionId].edgeIds[0];
+    const data: LinkSpaceData = {
+      ...added.data,
+      sessions: {
+        [created.sessionId]: {
+          ...added.data.sessions[created.sessionId],
+          edgeIds: []
+        }
+      },
+      edges: {
+        [edgeId]: {
+          ...added.data.edges[edgeId],
+          toNodeId: 'missing-node'
+        }
+      }
+    };
+
+    expect(() => importLinkSpaceData(JSON.stringify(data))).toThrow('Invalid Link Space data');
+  });
 });
