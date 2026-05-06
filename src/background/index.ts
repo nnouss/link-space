@@ -5,24 +5,42 @@ import {
   endExpiredSessions,
   shouldStartNewSession
 } from '../shared/session';
-import { loadData, saveData } from '../shared/storage';
+import { importLinkSpaceData, loadData, saveData } from '../shared/storage';
 import type { LinkSpaceData, RuntimeMessage, SearchSession } from '../shared/types';
 
 type RuntimeResponse =
   | { ok: true; data: LinkSpaceData }
   | { ok: false; error: string };
 
+const INVALID_DATA_MESSAGE = 'Invalid Link Space data';
 const sessionByTab = new Map<number, string>();
 const lastNodeByTab = new Map<number, string>();
+const navigationQueueByTab = new Map<number, Promise<void>>();
 
 chrome.webNavigation.onCommitted.addListener((details) => {
-  void handleNavigation(details);
+  enqueueNavigation(details);
 });
 
 chrome.runtime.onMessage.addListener((message: RuntimeMessage, _sender, sendResponse) => {
   void handleRuntimeMessage(message).then(sendResponse);
   return true;
 });
+
+function enqueueNavigation(details: chrome.webNavigation.WebNavigationFramedCallbackDetails) {
+  if (details.frameId !== 0 || details.tabId < 0) {
+    return;
+  }
+
+  const previous = navigationQueueByTab.get(details.tabId) ?? Promise.resolve();
+  const next = previous.catch(() => undefined).then(() => handleNavigation(details));
+
+  navigationQueueByTab.set(details.tabId, next);
+  void next.finally(() => {
+    if (navigationQueueByTab.get(details.tabId) === next) {
+      navigationQueueByTab.delete(details.tabId);
+    }
+  }).catch(() => undefined);
+}
 
 async function handleNavigation(details: chrome.webNavigation.WebNavigationFramedCallbackDetails) {
   if (details.frameId !== 0 || details.tabId < 0) {
@@ -62,12 +80,9 @@ async function handleNavigation(details: chrome.webNavigation.WebNavigationFrame
     return;
   }
 
-  const sessionId = sessionByTab.get(details.tabId);
-  const fromNodeId = lastNodeByTab.get(details.tabId);
-  const session = sessionId ? data.sessions[sessionId] : undefined;
-  const fromNode = fromNodeId ? data.nodes[fromNodeId] : undefined;
+  const source = resolveNavigationSource(data, details.tabId);
 
-  if (!sessionId || !fromNodeId || !session || !fromNode || session.status !== 'active') {
+  if (!source) {
     if (expirationChanged) {
       await saveData(data);
     }
@@ -76,12 +91,12 @@ async function handleNavigation(details: chrome.webNavigation.WebNavigationFrame
 
   const tab = await chrome.tabs.get(details.tabId);
   const result = addPageVisit(data, {
-    sessionId,
-    fromNodeId,
+    sessionId: source.sessionId,
+    fromNodeId: source.fromNodeId,
     url: details.url,
     title: tab.title || details.url,
     now,
-    isSearchResultClick: fromNode.depth === 0
+    isSearchResultClick: source.fromNode.depth === 0
   });
 
   lastNodeByTab.set(details.tabId, result.nodeId);
@@ -108,8 +123,16 @@ async function handleRuntimeMessage(message: RuntimeMessage): Promise<RuntimeRes
   }
 
   if (message.type === 'IMPORT_DATA') {
-    await saveData(message.payload);
-    return { ok: true, data: message.payload };
+    try {
+      const importedData = importLinkSpaceData(JSON.stringify(message.payload));
+      await saveData(importedData);
+      return { ok: true, data: importedData };
+    } catch {
+      return {
+        ok: false,
+        error: INVALID_DATA_MESSAGE
+      };
+    }
   }
 
   return { ok: false, error: 'Unsupported message' };
@@ -122,6 +145,56 @@ function findActiveSessionForTab(
 ): SearchSession | undefined {
   return Object.values(data.sessions).find(
     (session) => session.status === 'active' && session.tabId === tabId && session.query === query
+  );
+}
+
+function resolveNavigationSource(
+  data: LinkSpaceData,
+  tabId: number
+):
+  | {
+      sessionId: string;
+      fromNodeId: string;
+      fromNode: LinkSpaceData['nodes'][string];
+    }
+  | undefined {
+  const trackedSessionId = sessionByTab.get(tabId);
+  const trackedNodeId = lastNodeByTab.get(tabId);
+  const trackedSession = trackedSessionId ? data.sessions[trackedSessionId] : undefined;
+  const trackedNode = trackedNodeId ? data.nodes[trackedNodeId] : undefined;
+
+  if (trackedSessionId && trackedNodeId && trackedSession?.status === 'active' && trackedNode) {
+    return {
+      sessionId: trackedSessionId,
+      fromNodeId: trackedNodeId,
+      fromNode: trackedNode
+    };
+  }
+
+  const fallbackSession = findActiveSessionByTab(data, tabId);
+  if (!fallbackSession) {
+    return undefined;
+  }
+
+  const fallbackNodeId = fallbackSession.nodeIds.at(-1) ?? fallbackSession.rootNodeId;
+  const fallbackNode = data.nodes[fallbackNodeId] ?? data.nodes[fallbackSession.rootNodeId];
+  if (!fallbackNode) {
+    return undefined;
+  }
+
+  sessionByTab.set(tabId, fallbackSession.id);
+  lastNodeByTab.set(tabId, fallbackNode.id);
+
+  return {
+    sessionId: fallbackSession.id,
+    fromNodeId: fallbackNode.id,
+    fromNode: fallbackNode
+  };
+}
+
+function findActiveSessionByTab(data: LinkSpaceData, tabId: number): SearchSession | undefined {
+  return Object.values(data.sessions).find(
+    (session) => session.status === 'active' && session.tabId === tabId
   );
 }
 

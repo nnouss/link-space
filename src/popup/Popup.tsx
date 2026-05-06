@@ -33,6 +33,7 @@ const buttonStyle = {
 export function Popup() {
   const [data, setData] = useState<LinkSpaceData | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   const [isUpdating, setIsUpdating] = useState(false);
 
   useEffect(() => {
@@ -54,6 +55,11 @@ export function Popup() {
       .catch(() => {
         if (mounted) {
           setError('데이터를 불러오지 못했습니다.');
+        }
+      })
+      .finally(() => {
+        if (mounted) {
+          setIsLoading(false);
         }
       });
 
@@ -130,14 +136,14 @@ export function Popup() {
       </section>
 
       {error ? (
-        <p style={{ margin: '16px 0 0', color: '#b42318', fontSize: 13 }}>
-          데이터를 불러오지 못했습니다.
-        </p>
+        <p style={{ margin: '16px 0 0', color: '#b42318', fontSize: 13 }}>{error}</p>
       ) : null}
 
       <section style={{ marginTop: 18 }}>
         <h2 style={{ margin: '0 0 10px', fontSize: 14 }}>최근 검색 세션</h2>
-        {recentSessions.length > 0 ? (
+        {isLoading ? (
+          <p style={{ margin: 0, color: '#57606a', fontSize: 13 }}>불러오는 중입니다.</p>
+        ) : recentSessions.length > 0 ? (
           <ul style={{ display: 'grid', gap: 8, listStyle: 'none', margin: 0, padding: 0 }}>
             {recentSessions.map((session) => (
               <RecentSessionItem key={session.id} session={session} />

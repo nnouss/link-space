@@ -11,10 +11,12 @@ globalThis.chrome = {
   },
   tabs: {
     create: vi.fn(),
+    get: vi.fn(),
     query: vi.fn()
   },
   runtime: {
     onMessage: { addListener: vi.fn() },
+    getURL: vi.fn((path: string) => `chrome-extension://test/${path}`),
     sendMessage: vi.fn()
   },
   webNavigation: {
