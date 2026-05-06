@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { Color } from 'three';
 import type { NavigationEdge, PageNode, SearchSession } from '../shared/types';
 import { toGraphData } from './GraphView';
 
@@ -65,9 +66,33 @@ describe('GraphView graph data', () => {
       id: 'deep-node',
       page: node,
       title: 'Page deep-node',
-      color: 'oklch(72% 0.11 252)'
+      color: '#9da9e8'
     });
     expect(graphData.nodes[0].value).toBeCloseTo(5.8);
+  });
+
+  it('uses node colors that Three.js can parse without falling back', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const session = createSession({
+      nodeIds: ['root', 'child', 'deep-node'],
+      edgeIds: []
+    });
+    const graphData = toGraphData(
+      session,
+      {
+        root: createNode({ id: 'root', depth: 0 }),
+        child: createNode({ id: 'child', depth: 1 }),
+        'deep-node': createNode({ id: 'deep-node', depth: 2 })
+      },
+      {}
+    );
+
+    const parsedColors = graphData.nodes.map((node) => new Color(node.color).getHexString());
+
+    expect(warnSpy).not.toHaveBeenCalled();
+    expect(parsedColors).toEqual(['54c7a1', '6fb8da', '9da9e8']);
+
+    warnSpy.mockRestore();
   });
 });
 

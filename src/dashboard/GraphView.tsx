@@ -25,13 +25,13 @@ export interface GraphLink {
 }
 
 const NODE_COLORS = [
-  'oklch(75% 0.11 166)',
-  'oklch(73% 0.1 215)',
-  'oklch(72% 0.11 252)',
-  'oklch(78% 0.12 82)',
-  'oklch(72% 0.1 24)'
+  '#54c7a1',
+  '#6fb8da',
+  '#9da9e8',
+  '#d7bf72',
+  '#dc8f82'
 ];
-const BACKGROUND_COLOR = 'oklch(16% 0.012 225)';
+const BACKGROUND_COLOR = '#111820';
 
 export function GraphView({ session, nodes, edges, onSelectNode }: GraphViewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -58,7 +58,7 @@ export function GraphView({ session, nodes, edges, onSelectNode }: GraphViewProp
           nodeColor="color"
           nodeRelSize={5}
           nodeResolution={24}
-          linkColor={() => 'oklch(65% 0.025 230)'}
+          linkColor={() => '#8190a3'}
           linkWidth={0.4}
           linkOpacity={0.46}
           showNavInfo={false}
