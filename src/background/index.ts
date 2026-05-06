@@ -111,9 +111,25 @@ async function handleNavigation(details: chrome.webNavigation.WebNavigationTrans
     data = endActiveSessionsForTab(data, details.tabId, now);
     sessionByTab.delete(details.tabId);
     currentNodeByTab.delete(details.tabId);
-    if (expirationChanged || hasSessionEndChanges(loadedData, data)) {
-      await saveNavigationData(data, details.tabId);
+    const tab = await chrome.tabs.get(details.tabId);
+    const latestData = endActiveSessionsForTab(endExpiredSessions(await loadData(), now), details.tabId, now);
+
+    if (latestData.settings.recordingPaused || recordingStateVersionAtStart !== recordingStateVersion) {
+      sessionByTab.delete(details.tabId);
+      currentNodeByTab.delete(details.tabId);
+      return;
     }
+
+    const result = createBrowserSession(latestData, {
+      url: details.url,
+      title: tab.title || details.url,
+      tabId: details.tabId,
+      now
+    });
+    data = result.data;
+    sessionByTab.set(details.tabId, result.sessionId);
+    currentNodeByTab.set(details.tabId, data.sessions[result.sessionId].rootNodeId);
+    await saveNavigationData(data, details.tabId);
     return;
   }
 

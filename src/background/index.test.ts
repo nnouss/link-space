@@ -232,13 +232,14 @@ describe('background navigation collection', () => {
     expect(currentData.nodes).toEqual({});
   });
 
-  it('does not record typed non-Google navigation after a search session and ends the session', async () => {
-    vi.setSystemTime(new Date('2026-05-06T00:06:00.000Z'));
+  it('ends the active tab session and starts a new root for typed navigation', async () => {
+    vi.setSystemTime(new Date('2026-05-07T00:04:00.000Z'));
 
-    const created = createSearchSession(createEmptyData(), {
-      query: 'private typed',
+    const created = createBrowserSession(createEmptyData(), {
+      url: 'https://example.com/start',
+      title: 'Start Page',
       tabId: 11,
-      now: '2026-05-06T00:00:00.000Z'
+      now: '2026-05-07T00:00:00.000Z'
     });
     localStorageMock.get.mockResolvedValue({ linkSpaceData: created.data });
     localStorageMock.set.mockResolvedValue(undefined);
@@ -262,12 +263,24 @@ describe('background navigation collection', () => {
         sessions: expect.objectContaining({
           [created.sessionId]: expect.objectContaining({
             status: 'ended',
-            endedAt: '2026-05-06T00:06:00.000Z',
+            endedAt: '2026-05-07T00:04:00.000Z',
             nodeIds: ['node-1']
+          }),
+          'session-2': expect.objectContaining({
+            query: 'Typed Page',
+            status: 'active',
+            rootNodeId: 'node-2',
+            currentNodeId: 'node-2',
+            nodeIds: ['node-2'],
+            tabId: 11
           })
         }),
-        nodes: expect.not.objectContaining({
-          'node-2': expect.anything()
+        nodes: expect.objectContaining({
+          'node-2': expect.objectContaining({
+            url: 'https://sensitive.example/page',
+            title: 'Typed Page',
+            depth: 0
+          })
         })
       })
     });
