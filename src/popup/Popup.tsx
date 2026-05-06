@@ -1,34 +1,11 @@
 import { Network, Pause, Play } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import type { CSSProperties } from 'react';
 import type { LinkSpaceData, RuntimeMessage, SearchSession } from '../shared/types';
 
 type RuntimeResponse =
   | { ok: true; data: LinkSpaceData }
   | { ok: false; error: string };
-
-const containerStyle = {
-  width: 320,
-  padding: 16,
-  color: '#17202a',
-  fontFamily:
-    'Pretendard, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
-} satisfies React.CSSProperties;
-
-const buttonStyle = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  gap: 8,
-  border: '1px solid #d0d7de',
-  borderRadius: 6,
-  background: '#ffffff',
-  color: '#17202a',
-  cursor: 'pointer',
-  fontSize: 14,
-  fontWeight: 600,
-  minHeight: 36,
-  padding: '0 12px'
-} satisfies React.CSSProperties;
 
 export function Popup() {
   const [data, setData] = useState<LinkSpaceData | null>(null);
@@ -54,7 +31,7 @@ export function Popup() {
       })
       .catch(() => {
         if (mounted) {
-          setError('데이터를 불러오지 못했습니다.');
+          setError('세션 정보를 불러오지 못했습니다.');
         }
       })
       .finally(() => {
@@ -97,7 +74,7 @@ export function Popup() {
         setError(response.error);
       }
     } catch {
-      setError('설정을 변경하지 못했습니다.');
+      setError('기록 상태를 변경하지 못했습니다.');
     } finally {
       setIsUpdating(false);
     }
@@ -112,45 +89,53 @@ export function Popup() {
 
   return (
     <main style={containerStyle}>
-      <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <h1 style={{ margin: 0, fontSize: 20, lineHeight: 1.2 }}>Link Space</h1>
-        <span style={{ color: recordingPaused ? '#9a3412' : '#166534', fontSize: 12 }}>
-          {recordingPaused ? '일시정지' : '기록 중'}
+      <header style={headerStyle}>
+        <div style={brandBlockStyle}>
+          <span style={brandMarkStyle}>LS</span>
+          <div>
+            <h1 style={titleStyle}>Link Space</h1>
+            <p style={subtitleStyle}>검색 경로 분석</p>
+          </div>
+        </div>
+        <span style={recordingPaused ? pausedPillStyle : activePillStyle}>
+          {recordingPaused ? '기록 일시정지' : '검색 기록 중'}
         </span>
       </header>
 
-      <section style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+      <section style={actionsStyle}>
         <button
           type="button"
           onClick={toggleRecordingPaused}
           disabled={!data || isUpdating}
-          style={{ ...buttonStyle, flex: 1, opacity: !data || isUpdating ? 0.6 : 1 }}
+          style={{ ...primaryButtonStyle, opacity: !data || isUpdating ? 0.58 : 1 }}
         >
           <ToggleIcon size={16} aria-hidden="true" />
-          {recordingPaused ? '다시 시작' : '일시정지'}
+          {recordingPaused ? '기록 다시 시작' : '기록 일시정지'}
         </button>
-        <button type="button" onClick={openDashboard} style={buttonStyle} aria-label="대시보드 열기">
+        <button type="button" onClick={openDashboard} style={secondaryButtonStyle}>
           <Network size={16} aria-hidden="true" />
           대시보드
         </button>
       </section>
 
-      {error ? (
-        <p style={{ margin: '16px 0 0', color: '#b42318', fontSize: 13 }}>{error}</p>
-      ) : null}
+      {error ? <p style={errorTextStyle}>{error}</p> : null}
 
-      <section style={{ marginTop: 18 }}>
-        <h2 style={{ margin: '0 0 10px', fontSize: 14 }}>최근 검색 세션</h2>
+      <section style={sessionsSectionStyle}>
+        <div style={sectionHeaderStyle}>
+          <h2 style={sectionTitleStyle}>최근 세션</h2>
+          <span style={countPillStyle}>{recentSessions.length}</span>
+        </div>
+
         {isLoading ? (
-          <p style={{ margin: 0, color: '#57606a', fontSize: 13 }}>불러오는 중입니다.</p>
+          <p style={mutedTextStyle}>세션을 불러오는 중...</p>
         ) : recentSessions.length > 0 ? (
-          <ul style={{ display: 'grid', gap: 8, listStyle: 'none', margin: 0, padding: 0 }}>
+          <ul style={sessionListStyle}>
             {recentSessions.map((session) => (
               <RecentSessionItem key={session.id} session={session} />
             ))}
           </ul>
         ) : (
-          <p style={{ margin: 0, color: '#57606a', fontSize: 13 }}>저장된 세션이 없습니다.</p>
+          <p style={mutedTextStyle}>저장된 세션이 없습니다.</p>
         )}
       </section>
     </main>
@@ -159,29 +144,13 @@ export function Popup() {
 
 function RecentSessionItem({ session }: { session: SearchSession }) {
   return (
-    <li
-      style={{
-        border: '1px solid #d8dee4',
-        borderRadius: 6,
-        padding: 10,
-        background: '#f6f8fa'
-      }}
-    >
-      <div
-        style={{
-          fontSize: 14,
-          fontWeight: 600,
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap'
-        }}
-        title={session.query}
-      >
-        {session.query}
+    <li style={sessionItemStyle}>
+      <div style={sessionQueryStyle} title={session.query}>
+        {session.query || '제목 없는 검색'}
       </div>
-      <div style={{ color: '#57606a', display: 'flex', gap: 10, marginTop: 6, fontSize: 12 }}>
-        <span>{session.status === 'active' ? '진행 중' : '종료됨'}</span>
-        <span>노드 {session.nodeIds.length}개</span>
+      <div style={sessionMetaStyle}>
+        <span>{formatSessionStatus(session.status)}</span>
+        <span>{session.nodeIds.length}개 노드</span>
       </div>
     </li>
   );
@@ -190,3 +159,207 @@ function RecentSessionItem({ session }: { session: SearchSession }) {
 function sendRuntimeMessage(message: RuntimeMessage): Promise<RuntimeResponse> {
   return chrome.runtime.sendMessage(message);
 }
+
+function formatSessionStatus(status: SearchSession['status']): string {
+  return status === 'active' ? '진행 중' : '종료됨';
+}
+
+const fontFamily =
+  'Pretendard, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+
+const surfaceColors = {
+  page: 'oklch(16% 0.012 225)',
+  panel: 'oklch(19% 0.014 225)',
+  panelRaised: 'oklch(21% 0.015 225)',
+  selectedPanel: 'oklch(24% 0.025 178)',
+  border: 'oklch(30% 0.018 225)',
+  text: 'oklch(94% 0.012 225)',
+  muted: 'oklch(70% 0.028 225)',
+  dim: 'oklch(58% 0.03 225)',
+  accent: 'oklch(75% 0.11 166)',
+  accentText: 'oklch(17% 0.03 166)',
+  warning: 'oklch(78% 0.12 82)',
+  errorBg: 'oklch(24% 0.04 25)',
+  errorText: 'oklch(84% 0.08 25)'
+};
+
+const containerStyle = {
+  background: surfaceColors.page,
+  color: surfaceColors.text,
+  fontFamily,
+  margin: 0,
+  padding: 16,
+  width: 336
+} satisfies CSSProperties;
+
+const headerStyle = {
+  alignItems: 'start',
+  display: 'flex',
+  gap: 12,
+  justifyContent: 'space-between'
+} satisfies CSSProperties;
+
+const brandBlockStyle = {
+  alignItems: 'center',
+  display: 'flex',
+  gap: 10,
+  minWidth: 0
+} satisfies CSSProperties;
+
+const brandMarkStyle = {
+  alignItems: 'center',
+  background: surfaceColors.accent,
+  borderRadius: 6,
+  color: surfaceColors.accentText,
+  display: 'inline-flex',
+  flex: '0 0 auto',
+  fontSize: 12,
+  fontWeight: 900,
+  height: 32,
+  justifyContent: 'center',
+  width: 32
+} satisfies CSSProperties;
+
+const titleStyle = {
+  fontSize: 18,
+  lineHeight: 1.15,
+  margin: 0
+} satisfies CSSProperties;
+
+const subtitleStyle = {
+  color: surfaceColors.muted,
+  fontSize: 12,
+  margin: '3px 0 0'
+} satisfies CSSProperties;
+
+const activePillStyle = {
+  background: 'oklch(24% 0.035 166)',
+  borderRadius: 999,
+  color: 'oklch(82% 0.09 166)',
+  flex: '0 0 auto',
+  fontSize: 12,
+  fontWeight: 800,
+  padding: '5px 9px'
+} satisfies CSSProperties;
+
+const pausedPillStyle = {
+  ...activePillStyle,
+  background: 'oklch(25% 0.035 82)',
+  color: surfaceColors.warning
+} satisfies CSSProperties;
+
+const actionsStyle = {
+  display: 'grid',
+  gap: 8,
+  gridTemplateColumns: '1fr auto',
+  marginTop: 18
+} satisfies CSSProperties;
+
+const primaryButtonStyle = {
+  alignItems: 'center',
+  background: surfaceColors.accent,
+  border: 0,
+  borderRadius: 6,
+  color: surfaceColors.accentText,
+  cursor: 'pointer',
+  display: 'inline-flex',
+  fontSize: 13,
+  fontWeight: 900,
+  gap: 7,
+  justifyContent: 'center',
+  minHeight: 38,
+  padding: '0 12px'
+} satisfies CSSProperties;
+
+const secondaryButtonStyle = {
+  alignItems: 'center',
+  background: surfaceColors.panelRaised,
+  border: '1px solid transparent',
+  borderRadius: 6,
+  color: surfaceColors.text,
+  cursor: 'pointer',
+  display: 'inline-flex',
+  fontSize: 13,
+  fontWeight: 800,
+  gap: 7,
+  justifyContent: 'center',
+  minHeight: 38,
+  padding: '0 12px'
+} satisfies CSSProperties;
+
+const sessionsSectionStyle = {
+  marginTop: 20
+} satisfies CSSProperties;
+
+const sectionHeaderStyle = {
+  alignItems: 'center',
+  display: 'flex',
+  justifyContent: 'space-between',
+  marginBottom: 10
+} satisfies CSSProperties;
+
+const sectionTitleStyle = {
+  color: surfaceColors.muted,
+  fontSize: 12,
+  fontWeight: 900,
+  margin: 0,
+  textTransform: 'uppercase'
+} satisfies CSSProperties;
+
+const countPillStyle = {
+  background: surfaceColors.panelRaised,
+  borderRadius: 999,
+  color: surfaceColors.muted,
+  fontSize: 12,
+  padding: '2px 8px'
+} satisfies CSSProperties;
+
+const sessionListStyle = {
+  display: 'grid',
+  gap: 8,
+  listStyle: 'none',
+  margin: 0,
+  padding: 0
+} satisfies CSSProperties;
+
+const sessionItemStyle = {
+  background: surfaceColors.panel,
+  border: `1px solid ${surfaceColors.border}`,
+  borderRadius: 6,
+  display: 'grid',
+  gap: 7,
+  padding: '11px 12px'
+} satisfies CSSProperties;
+
+const sessionQueryStyle = {
+  color: surfaceColors.text,
+  fontSize: 13,
+  fontWeight: 850,
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap'
+} satisfies CSSProperties;
+
+const sessionMetaStyle = {
+  color: surfaceColors.dim,
+  display: 'flex',
+  fontSize: 12,
+  gap: 10
+} satisfies CSSProperties;
+
+const mutedTextStyle = {
+  color: surfaceColors.muted,
+  fontSize: 13,
+  lineHeight: 1.45,
+  margin: 0
+} satisfies CSSProperties;
+
+const errorTextStyle = {
+  background: surfaceColors.errorBg,
+  borderRadius: 6,
+  color: surfaceColors.errorText,
+  fontSize: 13,
+  lineHeight: 1.45,
+  margin: '14px 0 0',
+  padding: 10
+} satisfies CSSProperties;
