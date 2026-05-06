@@ -14,6 +14,7 @@ type RuntimeResponse =
 const INVALID_DATA_MESSAGE = 'Invalid Link Space data';
 const RECORDABLE_TRANSITION_TYPES = new Set(['link', 'form_submit', 'reload']);
 const REDIRECT_QUALIFIERS = new Set(['server_redirect', 'client_redirect']);
+const HISTORY_QUALIFIERS = new Set(['forward_back']);
 const DIRECT_TRANSITION_TYPES = new Set([
   'typed',
   'auto_bookmark',
@@ -22,7 +23,7 @@ const DIRECT_TRANSITION_TYPES = new Set([
   'keyword_generated'
 ]);
 const sessionByTab = new Map<number, string>();
-const lastNodeByTab = new Map<number, string>();
+const currentNodeByTab = new Map<number, string>();
 const navigationQueueByTab = new Map<number, Promise<void>>();
 
 chrome.webNavigation.onCommitted.addListener((details) => {
@@ -73,7 +74,7 @@ async function handleNavigation(details: chrome.webNavigation.WebNavigationTrans
   if (data.settings.recordingPaused) {
     data = endActiveSessionsForTab(data, details.tabId, now);
     sessionByTab.delete(details.tabId);
-    lastNodeByTab.delete(details.tabId);
+    currentNodeByTab.delete(details.tabId);
     if (expirationChanged || hasSessionEndChanges(loadedData, data)) {
       await saveData(data);
     }
@@ -93,20 +94,28 @@ async function handleNavigation(details: chrome.webNavigation.WebNavigationTrans
       });
       data = result.data;
       sessionByTab.set(details.tabId, result.sessionId);
-      lastNodeByTab.set(details.tabId, data.sessions[result.sessionId].rootNodeId);
+      currentNodeByTab.set(details.tabId, data.sessions[result.sessionId].rootNodeId);
     } else {
       sessionByTab.set(details.tabId, activeSession.id);
-      lastNodeByTab.set(details.tabId, activeSession.rootNodeId);
+      currentNodeByTab.set(details.tabId, activeSession.rootNodeId);
     }
 
     await saveNavigationData(data, details.tabId);
     return;
   }
 
+  if (isHistoryNavigation(details)) {
+    restoreCurrentNodeFromHistory(data, details.tabId, details.url);
+    if (expirationChanged) {
+      await saveNavigationData(data, details.tabId);
+    }
+    return;
+  }
+
   if (!isRecordableTransition(details)) {
     data = endActiveSessionsForTab(data, details.tabId, now);
     sessionByTab.delete(details.tabId);
-    lastNodeByTab.delete(details.tabId);
+    currentNodeByTab.delete(details.tabId);
     if (expirationChanged || hasSessionEndChanges(loadedData, data)) {
       await saveNavigationData(data, details.tabId);
     }
@@ -133,7 +142,7 @@ async function handleNavigation(details: chrome.webNavigation.WebNavigationTrans
   });
 
   if (result) {
-    lastNodeByTab.set(details.tabId, result.nodeId);
+    currentNodeByTab.set(details.tabId, result.nodeId);
   }
 }
 
@@ -162,7 +171,7 @@ async function handleRuntimeMessage(message: RuntimeMessage): Promise<RuntimeRes
     if (message.paused) {
       updatedData = endAllActiveSessions(updatedData, now);
       sessionByTab.clear();
-      lastNodeByTab.clear();
+      currentNodeByTab.clear();
     }
 
     await saveData(updatedData);
@@ -174,7 +183,7 @@ async function handleRuntimeMessage(message: RuntimeMessage): Promise<RuntimeRes
       const importedData = importLinkSpaceData(JSON.stringify(message.payload));
       await saveData(importedData);
       sessionByTab.clear();
-      lastNodeByTab.clear();
+      currentNodeByTab.clear();
       return { ok: true, data: importedData };
     } catch {
       return {
@@ -192,7 +201,7 @@ async function handleTabRemoved(tabId: number) {
   const data = endActiveSessionsForTab(await loadData(), tabId, now);
 
   sessionByTab.delete(tabId);
-  lastNodeByTab.delete(tabId);
+  currentNodeByTab.delete(tabId);
   await saveData(data);
 }
 
@@ -200,7 +209,7 @@ async function saveNavigationData(data: LinkSpaceData, tabId: number): Promise<b
   const latestData = await loadData();
   if (latestData.settings.recordingPaused) {
     sessionByTab.delete(tabId);
-    lastNodeByTab.delete(tabId);
+    currentNodeByTab.delete(tabId);
     return false;
   }
 
@@ -231,7 +240,7 @@ async function savePageVisit(
     latestSourceNode?.sessionId !== input.sessionId
   ) {
     sessionByTab.delete(tabId);
-    lastNodeByTab.delete(tabId);
+    currentNodeByTab.delete(tabId);
     return undefined;
   }
 
@@ -241,6 +250,12 @@ async function savePageVisit(
   });
   await saveData(result.data);
   return { nodeId: result.nodeId };
+}
+
+function isHistoryNavigation(
+  details: chrome.webNavigation.WebNavigationTransitionCallbackDetails
+): boolean {
+  return details.transitionQualifiers.some((qualifier) => HISTORY_QUALIFIERS.has(qualifier));
 }
 
 function isRecordableTransition(
@@ -267,7 +282,7 @@ function resolveNavigationSource(
     }
   | undefined {
   const trackedSessionId = sessionByTab.get(tabId);
-  const trackedNodeId = lastNodeByTab.get(tabId);
+  const trackedNodeId = currentNodeByTab.get(tabId);
   const trackedSession = trackedSessionId ? data.sessions[trackedSessionId] : undefined;
   const trackedNode = trackedNodeId ? data.nodes[trackedNodeId] : undefined;
 
@@ -297,13 +312,60 @@ function resolveNavigationSource(
   }
 
   sessionByTab.set(tabId, fallbackSession.id);
-  lastNodeByTab.set(tabId, fallbackNode.id);
+  currentNodeByTab.set(tabId, fallbackNode.id);
 
   return {
     sessionId: fallbackSession.id,
     fromNodeId: fallbackNode.id,
     fromNode: fallbackNode
   };
+}
+
+function restoreCurrentNodeFromHistory(data: LinkSpaceData, tabId: number, url: string): boolean {
+  const session = findActiveSessionByTab(data, tabId);
+  if (!session) {
+    sessionByTab.delete(tabId);
+    currentNodeByTab.delete(tabId);
+    return false;
+  }
+
+  const node = findLatestSessionNodeByUrl(data, session, url);
+  if (!node) {
+    return false;
+  }
+
+  sessionByTab.set(tabId, session.id);
+  currentNodeByTab.set(tabId, node.id);
+  return true;
+}
+
+function findLatestSessionNodeByUrl(
+  data: LinkSpaceData,
+  session: SearchSession,
+  url: string
+): LinkSpaceData['nodes'][string] | undefined {
+  for (const nodeId of [...session.nodeIds].reverse()) {
+    const node = data.nodes[nodeId];
+    if (node && urlsReferToSamePage(node.url, url)) {
+      return node;
+    }
+  }
+
+  return undefined;
+}
+
+function urlsReferToSamePage(left: string, right: string): boolean {
+  try {
+    const leftUrl = new URL(left);
+    const rightUrl = new URL(right);
+    return (
+      leftUrl.origin === rightUrl.origin &&
+      leftUrl.pathname === rightUrl.pathname &&
+      leftUrl.search === rightUrl.search
+    );
+  } catch {
+    return left === right;
+  }
 }
 
 function findActiveSessionByTab(data: LinkSpaceData, tabId: number): SearchSession | undefined {

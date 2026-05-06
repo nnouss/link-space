@@ -225,6 +225,67 @@ describe('background navigation collection', () => {
     });
   });
 
+  it('branches from the restored page after browser back navigation', async () => {
+    vi.setSystemTime(new Date('2026-05-06T00:07:00.000Z'));
+
+    const created = createSearchSession(createEmptyData(), {
+      query: 'branch depth',
+      tabId: 21,
+      now: '2026-05-06T00:00:00.000Z'
+    });
+    let currentData: LinkSpaceData = created.data;
+
+    localStorageMock.get.mockImplementation(() => Promise.resolve({ linkSpaceData: currentData }));
+    localStorageMock.set.mockImplementation(({ linkSpaceData }: { linkSpaceData: LinkSpaceData }) => {
+      currentData = linkSpaceData;
+      return Promise.resolve();
+    });
+    tabsMock.get.mockImplementation(() => Promise.resolve({ title: 'Visited Page' }));
+
+    await import('./index');
+    const listener = getNavigationListener();
+
+    listener(createNavigationDetails({ tabId: 21, url: 'https://example.com/a' }));
+    await vi.runAllTimersAsync();
+
+    listener(createNavigationDetails({ tabId: 21, url: 'https://example.com/b' }));
+    await vi.runAllTimersAsync();
+
+    listener(
+      createNavigationDetails({
+        tabId: 21,
+        url: 'https://example.com/a',
+        transitionQualifiers: ['forward_back']
+      })
+    );
+    await vi.runAllTimersAsync();
+
+    listener(createNavigationDetails({ tabId: 21, url: 'https://example.com/c' }));
+    await vi.runAllTimersAsync();
+
+    expect(currentData.sessions[created.sessionId].nodeIds).toEqual([
+      'node-1',
+      'node-2',
+      'node-3',
+      'node-4'
+    ]);
+    expect(currentData.nodes['node-2']).toMatchObject({
+      url: 'https://example.com/a',
+      depth: 1
+    });
+    expect(currentData.nodes['node-3']).toMatchObject({
+      url: 'https://example.com/b',
+      depth: 2,
+      fromUrl: 'https://example.com/a'
+    });
+    expect(currentData.nodes['node-4']).toMatchObject({
+      url: 'https://example.com/c',
+      depth: 2,
+      fromUrl: 'https://example.com/a'
+    });
+    expect(currentData.sessions[created.sessionId].edgeIds).toEqual(['edge-1', 'edge-2', 'edge-3']);
+  });
+
   it('does not let an in-flight navigation overwrite a pause save', async () => {
     vi.setSystemTime(new Date('2026-05-06T00:14:00.000Z'));
 
