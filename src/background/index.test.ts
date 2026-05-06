@@ -990,6 +990,76 @@ describe('background navigation collection', () => {
     expect(currentData.nodes).not.toHaveProperty('node-2');
   });
 
+  it('does not let a stale paused navigation save after pause and resume completed', async () => {
+    vi.setSystemTime(new Date('2026-05-06T00:17:00.000Z'));
+
+    const created = createSearchSession(createEmptyData(), {
+      query: 'stale paused snapshot',
+      tabId: 43,
+      now: '2026-05-06T00:00:00.000Z'
+    });
+    const stalePausedData: LinkSpaceData = {
+      ...created.data,
+      settings: {
+        ...created.data.settings,
+        recordingPaused: true
+      }
+    };
+    let currentData: LinkSpaceData = created.data;
+    let resolveNavigationLoad: (data: { linkSpaceData: LinkSpaceData }) => void = () => undefined;
+    const pendingNavigationLoad = new Promise<{ linkSpaceData: LinkSpaceData }>((resolve) => {
+      resolveNavigationLoad = resolve;
+    });
+
+    localStorageMock.get
+      .mockReturnValueOnce(pendingNavigationLoad)
+      .mockImplementation(() => Promise.resolve({ linkSpaceData: currentData }));
+    localStorageMock.set.mockImplementation(({ linkSpaceData }: { linkSpaceData: LinkSpaceData }) => {
+      currentData = linkSpaceData;
+      return Promise.resolve();
+    });
+
+    await import('./index');
+    const navigationListener = getNavigationListener();
+    const messageListener = getRuntimeMessageListener();
+    const sendResponse = vi.fn();
+
+    navigationListener(createNavigationDetails({ tabId: 43, url: 'https://example.com/stale-paused' }));
+    await vi.waitFor(() => {
+      expect(localStorageMock.get).toHaveBeenCalledTimes(1);
+    });
+
+    messageListener(
+      { type: 'SET_RECORDING_PAUSED', paused: true },
+      {} as chrome.runtime.MessageSender,
+      sendResponse
+    );
+    await vi.runAllTimersAsync();
+    sendResponse.mockClear();
+
+    messageListener(
+      { type: 'SET_RECORDING_PAUSED', paused: false },
+      {} as chrome.runtime.MessageSender,
+      sendResponse
+    );
+    await vi.runAllTimersAsync();
+
+    expect(currentData.settings.recordingPaused).toBe(false);
+    localStorageMock.set.mockClear();
+
+    resolveNavigationLoad({ linkSpaceData: stalePausedData });
+    await vi.runAllTimersAsync();
+
+    expect(localStorageMock.set).not.toHaveBeenCalled();
+    expect(currentData.settings.recordingPaused).toBe(false);
+    expect(currentData.sessions[created.sessionId]).toEqual(
+      expect.objectContaining({
+        status: 'ended',
+        nodeIds: ['node-1']
+      })
+    );
+  });
+
   it('rejects invalid imported data without saving', async () => {
     localStorageMock.set.mockResolvedValue(undefined);
 

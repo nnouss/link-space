@@ -92,7 +92,9 @@ async function handleNavigation(details: chrome.webNavigation.WebNavigationTrans
     sessionByTab.delete(details.tabId);
     currentNodeByTab.delete(details.tabId);
     if (expirationChanged || hasSessionEndChanges(loadedData, data)) {
-      await saveData(data);
+      await saveNavigationData(data, details.tabId, recordingStateVersionAtStart, {
+        allowPausedSave: true
+      });
     }
     return;
   }
@@ -270,10 +272,14 @@ async function handleTabRemoved(tabId: number) {
 async function saveNavigationData(
   data: LinkSpaceData,
   tabId: number,
-  recordingStateVersionAtStart: number
+  recordingStateVersionAtStart: number,
+  options: { allowPausedSave?: boolean } = {}
 ): Promise<boolean> {
   const latestData = await loadData();
-  if (latestData.settings.recordingPaused || recordingStateVersionAtStart !== recordingStateVersion) {
+  if (
+    (!options.allowPausedSave && latestData.settings.recordingPaused) ||
+    recordingStateVersionAtStart !== recordingStateVersion
+  ) {
     sessionByTab.delete(tabId);
     currentNodeByTab.delete(tabId);
     return false;
