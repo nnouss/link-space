@@ -157,7 +157,7 @@ const emptyStateStyle = {
   color: 'oklch(82% 0.018 225)',
   display: 'flex',
   fontFamily:
-    'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+    'Pretendard, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
   fontSize: 16,
   height: '100%',
   justifyContent: 'center',

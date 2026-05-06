@@ -11,7 +11,7 @@ const containerStyle = {
   padding: 16,
   color: '#17202a',
   fontFamily:
-    'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
+    'Pretendard, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
 } satisfies React.CSSProperties;
 
 const buttonStyle = {

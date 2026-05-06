@@ -313,7 +313,7 @@ function formatLongDate(value: string): string {
 }
 
 const fontFamily =
-  'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+  'Pretendard, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
 
 const surfaceColors = {
   page: 'oklch(16% 0.012 225)',

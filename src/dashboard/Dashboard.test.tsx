@@ -29,6 +29,7 @@ describe('Dashboard', () => {
     render(<Dashboard />);
 
     expect(await screen.findByText('검색 경로 분석')).toBeTruthy();
+    expect(screen.getByRole('main').style.fontFamily).toContain('Pretendard');
     expect(screen.getByText('세션')).toBeTruthy();
     expect(screen.getByText('현재 세션')).toBeTruthy();
     expect(screen.getByText('내보내기')).toBeTruthy();
