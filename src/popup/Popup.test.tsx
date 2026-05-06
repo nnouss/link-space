@@ -43,6 +43,47 @@ describe('Popup', () => {
       url: 'chrome-extension://test/index.html'
     });
   });
+
+  it('deletes checked recent sessions from the popup', async () => {
+    const data = createData(false);
+    const sendMessage = chrome.runtime.sendMessage as unknown as {
+      mockResolvedValueOnce: (value: unknown) => typeof sendMessage;
+    };
+    sendMessage
+      .mockResolvedValueOnce({ ok: true, data })
+      .mockResolvedValueOnce({ ok: true, data: { ...data, sessions: {}, nodes: {}, edges: {} } });
+
+    render(<Popup />);
+
+    fireEvent.click(await screen.findByLabelText('세션 선택: impeccable'));
+    fireEvent.click(screen.getByLabelText('선택 세션 삭제'));
+    fireEvent.click(screen.getByLabelText('선택 세션 삭제 확인'));
+
+    expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({
+      type: 'DELETE_SESSIONS',
+      sessionIds: ['session-1']
+    });
+  });
+
+  it('deletes all sessions from the popup after confirmation', async () => {
+    const data = createData(false);
+    const sendMessage = chrome.runtime.sendMessage as unknown as {
+      mockResolvedValueOnce: (value: unknown) => typeof sendMessage;
+    };
+    sendMessage
+      .mockResolvedValueOnce({ ok: true, data })
+      .mockResolvedValueOnce({ ok: true, data: { ...data, sessions: {}, nodes: {}, edges: {} } });
+
+    render(<Popup />);
+
+    await screen.findByText('impeccable');
+    fireEvent.click(screen.getByLabelText('전체 세션 삭제'));
+    fireEvent.click(screen.getByLabelText('전체 세션 삭제 확인'));
+
+    expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({
+      type: 'DELETE_ALL_SESSIONS'
+    });
+  });
 });
 
 function createData(recordingPaused: boolean): LinkSpaceData {

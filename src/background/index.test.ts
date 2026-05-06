@@ -520,6 +520,46 @@ describe('background navigation collection', () => {
     });
   });
 
+  it('deletes selected sessions through runtime message', async () => {
+    const first = createSearchSession(createEmptyData(), {
+      query: 'delete one',
+      tabId: 1,
+      now: '2026-05-06T00:00:00.000Z'
+    });
+    const second = createSearchSession(first.data, {
+      query: 'delete two',
+      tabId: 2,
+      now: '2026-05-06T00:01:00.000Z'
+    });
+    const third = createSearchSession(second.data, {
+      query: 'keep three',
+      tabId: 3,
+      now: '2026-05-06T00:02:00.000Z'
+    });
+    localStorageMock.get.mockResolvedValue({ linkSpaceData: third.data });
+    localStorageMock.set.mockResolvedValue(undefined);
+
+    await import('./index');
+    const listener = getRuntimeMessageListener();
+    const sendResponse = vi.fn();
+
+    listener(
+      { type: 'DELETE_SESSIONS', sessionIds: [first.sessionId, second.sessionId] },
+      {} as chrome.runtime.MessageSender,
+      sendResponse
+    );
+    await vi.runAllTimersAsync();
+
+    expect(sendResponse).toHaveBeenCalledWith({
+      ok: true,
+      data: expect.objectContaining({
+        sessions: {
+          [third.sessionId]: third.data.sessions[third.sessionId]
+        }
+      })
+    });
+  });
+
   it('returns expired sessions as ended on GET_DATA', async () => {
     vi.setSystemTime(new Date('2026-05-06T00:31:00.000Z'));
 

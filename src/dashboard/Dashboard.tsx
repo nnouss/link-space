@@ -18,8 +18,8 @@ export function Dashboard() {
   const [isLoading, setIsLoading] = useState(true);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
-  const [confirmingDeleteSessionId, setConfirmingDeleteSessionId] = useState<string | null>(null);
-  const [isConfirmingDeleteAll, setIsConfirmingDeleteAll] = useState(false);
+  const [selectedSessionIds, setSelectedSessionIds] = useState<string[]>([]);
+  const [isConfirmingDeleteSelected, setIsConfirmingDeleteSelected] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -67,7 +67,6 @@ export function Dashboard() {
   function selectSession(session: SearchSession) {
     setSelectedSessionId(session.id);
     setSelectedNode(null);
-    setConfirmingDeleteSessionId(null);
   }
 
   function applyDeletedData(nextData: LinkSpaceData) {
@@ -80,10 +79,27 @@ export function Dashboard() {
       return latestSession(nextData.sessions)?.id ?? null;
     });
     setSelectedNode(null);
+    setSelectedSessionIds((currentIds) => currentIds.filter((sessionId) => nextData.sessions[sessionId]));
   }
 
-  async function deleteSession(session: SearchSession) {
-    if (isDeleting) {
+  function toggleSessionSelection(sessionId: string) {
+    setIsConfirmingDeleteSelected(false);
+    setSelectedSessionIds((currentIds) =>
+      currentIds.includes(sessionId)
+        ? currentIds.filter((currentId) => currentId !== sessionId)
+        : [...currentIds, sessionId]
+    );
+  }
+
+  function toggleAllSessionSelection() {
+    setIsConfirmingDeleteSelected(false);
+    setSelectedSessionIds((currentIds) =>
+      currentIds.length === sessions.length ? [] : sessions.map((session) => session.id)
+    );
+  }
+
+  async function deleteSelectedSessions() {
+    if (isDeleting || selectedSessionIds.length === 0) {
       return;
     }
 
@@ -91,43 +107,21 @@ export function Dashboard() {
     setError(null);
 
     try {
-      const response = await sendRuntimeMessage({ type: 'DELETE_SESSION', sessionId: session.id });
+      const response = await sendRuntimeMessage({
+        type: 'DELETE_SESSIONS',
+        sessionIds: selectedSessionIds
+      });
 
       if (!response?.ok) {
-        setError('세션을 삭제하지 못했습니다. 다시 시도하세요.');
+        setError('선택한 세션을 삭제하지 못했습니다. 다시 시도하세요.');
         return;
       }
 
       applyDeletedData(response.data);
-      setConfirmingDeleteSessionId(null);
+      setSelectedSessionIds([]);
+      setIsConfirmingDeleteSelected(false);
     } catch {
-      setError('세션을 삭제하지 못했습니다. 다시 시도하세요.');
-    } finally {
-      setIsDeleting(false);
-    }
-  }
-
-  async function deleteAllSessions() {
-    if (isDeleting || sessions.length === 0) {
-      return;
-    }
-
-    setIsDeleting(true);
-    setError(null);
-
-    try {
-      const response = await sendRuntimeMessage({ type: 'DELETE_ALL_SESSIONS' });
-
-      if (!response?.ok) {
-        setError('전체 세션을 삭제하지 못했습니다. 다시 시도하세요.');
-        return;
-      }
-
-      applyDeletedData(response.data);
-      setConfirmingDeleteSessionId(null);
-      setIsConfirmingDeleteAll(false);
-    } catch {
-      setError('전체 세션을 삭제하지 못했습니다. 다시 시도하세요.');
+      setError('선택한 세션을 삭제하지 못했습니다. 다시 시도하세요.');
     } finally {
       setIsDeleting(false);
     }
@@ -194,13 +188,27 @@ export function Dashboard() {
           <div style={sectionHeaderStyle}>
             <h2 style={sectionTitleStyle}>세션</h2>
             <div style={sectionActionsStyle}>
+              <label style={allCheckboxLabelStyle}>
+                <input
+                  type="checkbox"
+                  aria-label="모든 세션 선택"
+                  checked={sessions.length > 0 && selectedSessionIds.length === sessions.length}
+                  onChange={toggleAllSessionSelection}
+                  disabled={sessions.length === 0 || isDeleting}
+                  style={checkboxInputStyle}
+                />
+                <span style={sessions.length > 0 && selectedSessionIds.length === sessions.length ? checkedBoxStyle : checkboxBoxStyle}>
+                  {sessions.length > 0 && selectedSessionIds.length === sessions.length ? <Check size={13} aria-hidden="true" /> : null}
+                </span>
+              </label>
               <span style={countPillStyle}>{sessions.length}</span>
-              {isConfirmingDeleteAll ? (
+              <span style={selectedCountStyle}>선택 {selectedSessionIds.length}</span>
+              {isConfirmingDeleteSelected ? (
                 <span style={inlineConfirmStyle}>
                   <button
                     type="button"
-                    aria-label="모든 세션 삭제 확인"
-                    onClick={deleteAllSessions}
+                    aria-label="선택 세션 삭제 확인"
+                    onClick={deleteSelectedSessions}
                     disabled={isDeleting}
                     style={dangerConfirmButtonStyle}
                   >
@@ -208,8 +216,8 @@ export function Dashboard() {
                   </button>
                   <button
                     type="button"
-                    aria-label="모든 세션 삭제 취소"
-                    onClick={() => setIsConfirmingDeleteAll(false)}
+                    aria-label="선택 세션 삭제 취소"
+                    onClick={() => setIsConfirmingDeleteSelected(false)}
                     disabled={isDeleting}
                     style={quietIconButtonStyle}
                   >
@@ -219,12 +227,12 @@ export function Dashboard() {
               ) : (
                 <button
                   type="button"
-                  aria-label="모든 세션 삭제"
-                  onClick={() => setIsConfirmingDeleteAll(true)}
-                  disabled={sessions.length === 0 || isDeleting}
+                  aria-label="선택 세션 삭제"
+                  onClick={() => setIsConfirmingDeleteSelected(true)}
+                  disabled={selectedSessionIds.length === 0 || isDeleting}
                   style={{
                     ...dangerIconButtonStyle,
-                    opacity: sessions.length === 0 || isDeleting ? 0.38 : 1
+                    opacity: selectedSessionIds.length === 0 || isDeleting ? 0.38 : 1
                   }}
                 >
                   <Trash2 size={14} aria-hidden="true" />
@@ -239,6 +247,7 @@ export function Dashboard() {
             <ul style={sessionListStyle}>
               {sessions.map((session) => {
                 const isSelected = selectedSessionId === session.id;
+                const isChecked = selectedSessionIds.includes(session.id);
 
                 return (
                   <li
@@ -249,6 +258,18 @@ export function Dashboard() {
                       background: isSelected ? surfaceColors.selectedPanel : surfaceColors.panel
                     }}
                   >
+                    <label style={checkboxLabelStyle}>
+                      <input
+                        type="checkbox"
+                        aria-label={'세션 선택: ' + (session.query || '제목 없는 검색')}
+                        checked={isChecked}
+                        onChange={() => toggleSessionSelection(session.id)}
+                        style={checkboxInputStyle}
+                      />
+                      <span style={isChecked ? checkedBoxStyle : checkboxBoxStyle}>
+                        {isChecked ? <Check size={13} aria-hidden="true" /> : null}
+                      </span>
+                    </label>
                     <button
                       type="button"
                       aria-current={isSelected ? 'true' : undefined}
@@ -266,38 +287,6 @@ export function Dashboard() {
                       </span>
                       {isSelected ? <span style={selectedMarkerStyle}>선택됨</span> : null}
                     </button>
-                    {confirmingDeleteSessionId === session.id ? (
-                      <span style={rowConfirmStyle}>
-                        <button
-                          type="button"
-                          aria-label={`세션 삭제 확인: ${session.query || '제목 없는 검색'}`}
-                          onClick={() => deleteSession(session)}
-                          disabled={isDeleting}
-                          style={dangerConfirmButtonStyle}
-                        >
-                          <Check size={14} aria-hidden="true" />
-                        </button>
-                        <button
-                          type="button"
-                          aria-label={`세션 삭제 취소: ${session.query || '제목 없는 검색'}`}
-                          onClick={() => setConfirmingDeleteSessionId(null)}
-                          disabled={isDeleting}
-                          style={quietIconButtonStyle}
-                        >
-                          <X size={14} aria-hidden="true" />
-                        </button>
-                      </span>
-                    ) : (
-                      <button
-                        type="button"
-                        aria-label={`세션 삭제: ${session.query || '제목 없는 검색'}`}
-                        onClick={() => setConfirmingDeleteSessionId(session.id)}
-                        disabled={isDeleting}
-                        style={dangerIconButtonStyle}
-                      >
-                        <Trash2 size={14} aria-hidden="true" />
-                      </button>
-                    )}
                   </li>
                 );
               })}
@@ -548,6 +537,12 @@ const countPillStyle = {
   padding: '2px 8px'
 } satisfies CSSProperties;
 
+const selectedCountStyle = {
+  color: surfaceColors.dim,
+  fontSize: 12,
+  fontWeight: 800
+} satisfies CSSProperties;
+
 const sectionActionsStyle = {
   alignItems: 'center',
   display: 'inline-flex',
@@ -567,10 +562,10 @@ const sessionItemStyle = {
   border: '1px solid transparent',
   borderRadius: 8,
   display: 'grid',
-  gap: 4,
-  gridTemplateColumns: 'minmax(0, 1fr) 34px',
+  gap: 8,
+  gridTemplateColumns: '30px minmax(0, 1fr)',
   minHeight: 70,
-  padding: '4px 4px 4px 0'
+  padding: '4px 8px'
 } satisfies CSSProperties;
 
 const sessionButtonStyle = {
@@ -587,6 +582,47 @@ const sessionButtonStyle = {
   position: 'relative',
   textAlign: 'left',
   width: '100%'
+} satisfies CSSProperties;
+
+const checkboxLabelStyle = {
+  alignItems: 'center',
+  cursor: 'pointer',
+  display: 'inline-flex',
+  height: 30,
+  justifyContent: 'center',
+  width: 30
+} satisfies CSSProperties;
+
+const allCheckboxLabelStyle = {
+  ...checkboxLabelStyle,
+  height: 28,
+  width: 28
+} satisfies CSSProperties;
+
+const checkboxInputStyle = {
+  height: 1,
+  opacity: 0,
+  position: 'absolute',
+  width: 1
+} satisfies CSSProperties;
+
+const checkboxBoxStyle = {
+  alignItems: 'center',
+  background: 'oklch(22% 0.014 225)',
+  border: '1px solid oklch(35% 0.018 225)',
+  borderRadius: 6,
+  color: surfaceColors.accentText,
+  display: 'inline-flex',
+  height: 20,
+  justifyContent: 'center',
+  width: 20
+} satisfies CSSProperties;
+
+const checkedBoxStyle = {
+  ...checkboxBoxStyle,
+  background: surfaceColors.accent,
+  borderColor: surfaceColors.accent,
+  color: surfaceColors.accentText
 } satisfies CSSProperties;
 
 const dangerIconButtonStyle = {

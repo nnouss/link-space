@@ -47,14 +47,22 @@ export function importLinkSpaceData(text: string): LinkSpaceData {
 }
 
 export function deleteSearchSession(data: LinkSpaceData, sessionId: string): LinkSpaceData {
-  const session = data.sessions[sessionId];
-  if (!session) {
+  return deleteSearchSessions(data, [sessionId]);
+}
+
+export function deleteSearchSessions(data: LinkSpaceData, sessionIds: string[]): LinkSpaceData {
+  const sessionIdSet = new Set(sessionIds);
+  const sessionsToDelete = Object.values(data.sessions).filter((session) => sessionIdSet.has(session.id));
+
+  if (sessionsToDelete.length === 0) {
     return data;
   }
 
-  const nodeIds = new Set(session.nodeIds);
-  const edgeIds = new Set(session.edgeIds);
-  const { [sessionId]: _deletedSession, ...sessions } = data.sessions;
+  const nodeIds = new Set(sessionsToDelete.flatMap((session) => session.nodeIds));
+  const edgeIds = new Set(sessionsToDelete.flatMap((session) => session.edgeIds));
+  const sessions = Object.fromEntries(
+    Object.entries(data.sessions).filter(([sessionId]) => !sessionIdSet.has(sessionId))
+  );
   const nodes = Object.fromEntries(
     Object.entries(data.nodes).filter(([nodeId]) => !nodeIds.has(nodeId))
   );

@@ -1,4 +1,4 @@
-import { Network, Pause, Play } from 'lucide-react';
+import { Check, Network, Pause, Play, Trash2, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
 import type { LinkSpaceData, RuntimeMessage, SearchSession } from '../shared/types';
@@ -11,7 +11,10 @@ export function Popup() {
   const [data, setData] = useState<LinkSpaceData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
+  const [selectedSessionIds, setSelectedSessionIds] = useState<string[]>([]);
+  const [confirmingDeleteMode, setConfirmingDeleteMode] = useState<'selected' | 'all' | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -54,6 +57,72 @@ export function Popup() {
       .sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime())
       .slice(0, 5);
   }, [data]);
+
+  function applyDeletedData(nextData: LinkSpaceData) {
+    setData(nextData);
+    setSelectedSessionIds((currentIds) => currentIds.filter((sessionId) => nextData.sessions[sessionId]));
+    setConfirmingDeleteMode(null);
+  }
+
+  function toggleSessionSelection(sessionId: string) {
+    setConfirmingDeleteMode(null);
+    setSelectedSessionIds((currentIds) =>
+      currentIds.includes(sessionId)
+        ? currentIds.filter((currentId) => currentId !== sessionId)
+        : [...currentIds, sessionId]
+    );
+  }
+
+  async function deleteSelectedSessions() {
+    if (isDeleting || selectedSessionIds.length === 0) {
+      return;
+    }
+
+    setIsDeleting(true);
+    setError(null);
+
+    try {
+      const response = await sendRuntimeMessage({
+        type: 'DELETE_SESSIONS',
+        sessionIds: selectedSessionIds
+      });
+
+      if (response.ok) {
+        applyDeletedData(response.data);
+        setSelectedSessionIds([]);
+      } else {
+        setError(response.error);
+      }
+    } catch {
+      setError('선택한 세션을 삭제하지 못했습니다.');
+    } finally {
+      setIsDeleting(false);
+    }
+  }
+
+  async function deleteAllSessions() {
+    if (isDeleting || !data || Object.keys(data.sessions).length === 0) {
+      return;
+    }
+
+    setIsDeleting(true);
+    setError(null);
+
+    try {
+      const response = await sendRuntimeMessage({ type: 'DELETE_ALL_SESSIONS' });
+
+      if (response.ok) {
+        applyDeletedData(response.data);
+        setSelectedSessionIds([]);
+      } else {
+        setError(response.error);
+      }
+    } catch {
+      setError('전체 세션을 삭제하지 못했습니다.');
+    } finally {
+      setIsDeleting(false);
+    }
+  }
 
   async function toggleRecordingPaused() {
     if (!data || isUpdating) {
@@ -129,11 +198,52 @@ export function Popup() {
         {isLoading ? (
           <p style={mutedTextStyle}>세션을 불러오는 중...</p>
         ) : recentSessions.length > 0 ? (
-          <ul style={sessionListStyle}>
-            {recentSessions.map((session) => (
-              <RecentSessionItem key={session.id} session={session} />
-            ))}
-          </ul>
+          <>
+            <div style={deleteBarStyle}>
+              <span style={selectedCountStyle}>선택 {selectedSessionIds.length}</span>
+              <div style={deleteActionsStyle}>
+                {confirmingDeleteMode === 'selected' ? (
+                  <span style={inlineConfirmStyle}>
+                    <button type="button" aria-label="선택 세션 삭제 확인" onClick={deleteSelectedSessions} disabled={isDeleting} style={dangerConfirmButtonStyle}>
+                      <Check size={13} aria-hidden="true" />
+                    </button>
+                    <button type="button" aria-label="선택 세션 삭제 취소" onClick={() => setConfirmingDeleteMode(null)} disabled={isDeleting} style={quietIconButtonStyle}>
+                      <X size={13} aria-hidden="true" />
+                    </button>
+                  </span>
+                ) : (
+                  <button type="button" aria-label="선택 세션 삭제" onClick={() => setConfirmingDeleteMode('selected')} disabled={selectedSessionIds.length === 0 || isDeleting} style={{ ...deleteTextButtonStyle, opacity: selectedSessionIds.length === 0 || isDeleting ? 0.42 : 1 }}>
+                    <Trash2 size={13} aria-hidden="true" />
+                    선택 삭제
+                  </button>
+                )}
+                {confirmingDeleteMode === 'all' ? (
+                  <span style={inlineConfirmStyle}>
+                    <button type="button" aria-label="전체 세션 삭제 확인" onClick={deleteAllSessions} disabled={isDeleting} style={dangerConfirmButtonStyle}>
+                      <Check size={13} aria-hidden="true" />
+                    </button>
+                    <button type="button" aria-label="전체 세션 삭제 취소" onClick={() => setConfirmingDeleteMode(null)} disabled={isDeleting} style={quietIconButtonStyle}>
+                      <X size={13} aria-hidden="true" />
+                    </button>
+                  </span>
+                ) : (
+                  <button type="button" aria-label="전체 세션 삭제" onClick={() => setConfirmingDeleteMode('all')} disabled={isDeleting} style={deleteTextButtonStyle}>
+                    전체 삭제
+                  </button>
+                )}
+              </div>
+            </div>
+            <ul style={sessionListStyle}>
+              {recentSessions.map((session) => (
+                <RecentSessionItem
+                  key={session.id}
+                  session={session}
+                  checked={selectedSessionIds.includes(session.id)}
+                  onToggle={() => toggleSessionSelection(session.id)}
+                />
+              ))}
+            </ul>
+          </>
         ) : (
           <p style={mutedTextStyle}>저장된 세션이 없습니다.</p>
         )}
@@ -142,15 +252,37 @@ export function Popup() {
   );
 }
 
-function RecentSessionItem({ session }: { session: SearchSession }) {
+function RecentSessionItem({
+  session,
+  checked,
+  onToggle
+}: {
+  session: SearchSession;
+  checked: boolean;
+  onToggle: () => void;
+}) {
   return (
     <li style={sessionItemStyle}>
+      <label style={checkboxLabelStyle}>
+        <input
+          type="checkbox"
+          aria-label={`세션 선택: ${session.query || '제목 없는 검색'}`}
+          checked={checked}
+          onChange={onToggle}
+          style={checkboxInputStyle}
+        />
+        <span style={checked ? checkedBoxStyle : checkboxBoxStyle}>
+          {checked ? <Check size={12} aria-hidden="true" /> : null}
+        </span>
+      </label>
+      <div style={sessionTextStyle}>
       <div style={sessionQueryStyle} title={session.query}>
         {session.query || '제목 없는 검색'}
       </div>
       <div style={sessionMetaStyle}>
         <span>{formatSessionStatus(session.status)}</span>
         <span>{session.nodeIds.length}개 노드</span>
+      </div>
       </div>
     </li>
   );
@@ -316,6 +448,64 @@ const countPillStyle = {
   padding: '2px 8px'
 } satisfies CSSProperties;
 
+const deleteBarStyle = {
+  alignItems: 'center',
+  display: 'flex',
+  justifyContent: 'space-between',
+  marginBottom: 8
+} satisfies CSSProperties;
+
+const deleteActionsStyle = {
+  display: 'inline-flex',
+  gap: 6
+} satisfies CSSProperties;
+
+const selectedCountStyle = {
+  color: surfaceColors.dim,
+  fontSize: 12,
+  fontWeight: 800
+} satisfies CSSProperties;
+
+const deleteTextButtonStyle = {
+  alignItems: 'center',
+  background: surfaceColors.panelRaised,
+  border: `1px solid ${surfaceColors.border}`,
+  borderRadius: 7,
+  color: surfaceColors.muted,
+  cursor: 'pointer',
+  display: 'inline-flex',
+  fontSize: 12,
+  fontWeight: 850,
+  gap: 5,
+  height: 28,
+  padding: '0 8px'
+} satisfies CSSProperties;
+
+const inlineConfirmStyle = {
+  display: 'inline-flex',
+  gap: 5
+} satisfies CSSProperties;
+
+const quietIconButtonStyle = {
+  alignItems: 'center',
+  background: surfaceColors.panelRaised,
+  border: `1px solid ${surfaceColors.border}`,
+  borderRadius: 7,
+  color: surfaceColors.muted,
+  cursor: 'pointer',
+  display: 'inline-flex',
+  height: 28,
+  justifyContent: 'center',
+  width: 28
+} satisfies CSSProperties;
+
+const dangerConfirmButtonStyle = {
+  ...quietIconButtonStyle,
+  background: 'oklch(31% 0.055 28)',
+  borderColor: 'oklch(47% 0.08 28)',
+  color: 'oklch(86% 0.055 40)'
+} satisfies CSSProperties;
+
 const sessionListStyle = {
   display: 'grid',
   gap: 8,
@@ -330,7 +520,49 @@ const sessionItemStyle = {
   borderRadius: 8,
   display: 'grid',
   gap: 7,
+  gridTemplateColumns: '24px minmax(0, 1fr)',
   padding: '11px 12px'
+} satisfies CSSProperties;
+
+const sessionTextStyle = {
+  display: 'grid',
+  gap: 7,
+  minWidth: 0
+} satisfies CSSProperties;
+
+const checkboxLabelStyle = {
+  alignItems: 'center',
+  cursor: 'pointer',
+  display: 'inline-flex',
+  height: 22,
+  justifyContent: 'center',
+  width: 22
+} satisfies CSSProperties;
+
+const checkboxInputStyle = {
+  height: 1,
+  opacity: 0,
+  position: 'absolute',
+  width: 1
+} satisfies CSSProperties;
+
+const checkboxBoxStyle = {
+  alignItems: 'center',
+  background: 'oklch(22% 0.014 225)',
+  border: `1px solid ${surfaceColors.border}`,
+  borderRadius: 5,
+  color: surfaceColors.accentText,
+  display: 'inline-flex',
+  height: 18,
+  justifyContent: 'center',
+  width: 18
+} satisfies CSSProperties;
+
+const checkedBoxStyle = {
+  ...checkboxBoxStyle,
+  background: surfaceColors.accent,
+  borderColor: surfaceColors.accent,
+  color: surfaceColors.accentText
 } satisfies CSSProperties;
 
 const sessionQueryStyle = {

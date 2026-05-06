@@ -72,7 +72,7 @@ describe('Dashboard', () => {
     expect(screen.getByText('방문 시각')).toBeTruthy();
     expect(screen.getByText('이전 URL')).toBeTruthy();
   });
-  it('deletes one session from the session list after inline confirmation', async () => {
+  it('deletes checked sessions from the session list after inline confirmation', async () => {
     const data = createData();
     const sendMessage = chrome.runtime.sendMessage as unknown as SendMessageMock;
     sendMessage
@@ -81,16 +81,17 @@ describe('Dashboard', () => {
 
     render(<Dashboard />);
 
-    fireEvent.click(await screen.findByLabelText('세션 삭제: knowledge graph'));
-    fireEvent.click(screen.getByLabelText('세션 삭제 확인: knowledge graph'));
+    fireEvent.click(await screen.findByLabelText('세션 선택: knowledge graph'));
+    fireEvent.click(screen.getByLabelText('선택 세션 삭제'));
+    fireEvent.click(screen.getByLabelText('선택 세션 삭제 확인'));
 
     expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({
-      type: 'DELETE_SESSION',
-      sessionId: 'session-1'
+      type: 'DELETE_SESSIONS',
+      sessionIds: ['session-1']
     });
   });
 
-  it('deletes every session after inline confirmation', async () => {
+  it('deletes every checked session after inline confirmation', async () => {
     const data = createData();
     const sendMessage = chrome.runtime.sendMessage as unknown as SendMessageMock;
     sendMessage
@@ -99,12 +100,14 @@ describe('Dashboard', () => {
 
     render(<Dashboard />);
 
-    await screen.findByLabelText('세션 삭제: knowledge graph');
-    fireEvent.click(screen.getByLabelText('모든 세션 삭제'));
-    fireEvent.click(screen.getByLabelText('모든 세션 삭제 확인'));
+    await screen.findByLabelText('세션 선택: knowledge graph');
+    fireEvent.click(screen.getByLabelText('모든 세션 선택'));
+    fireEvent.click(screen.getByLabelText('선택 세션 삭제'));
+    fireEvent.click(screen.getByLabelText('선택 세션 삭제 확인'));
 
     expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({
-      type: 'DELETE_ALL_SESSIONS'
+      type: 'DELETE_SESSIONS',
+      sessionIds: ['session-1']
     });
   });
 });

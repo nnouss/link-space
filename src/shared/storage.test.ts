@@ -5,6 +5,7 @@ import {
   createEmptyData,
   deleteAllSearchSessions,
   deleteSearchSession,
+  deleteSearchSessions,
   exportLinkSpaceData,
   importLinkSpaceData,
   loadData,
@@ -244,5 +245,32 @@ describe('storage logic', () => {
       edges: {},
       settings: data.settings
     });
+  });
+
+  it('deleteSearchSessions removes multiple selected sessions and keeps the rest', () => {
+    const first = createSearchSession(createEmptyData(), {
+      query: 'delete first',
+      tabId: 1,
+      now: '2026-05-06T00:00:00.000Z'
+    });
+    const second = createSearchSession(first.data, {
+      query: 'delete second',
+      tabId: 2,
+      now: '2026-05-06T00:01:00.000Z'
+    });
+    const third = createSearchSession(second.data, {
+      query: 'keep third',
+      tabId: 3,
+      now: '2026-05-06T00:02:00.000Z'
+    });
+
+    const deleted = deleteSearchSessions(third.data, [first.sessionId, second.sessionId]);
+
+    expect(deleted.sessions).not.toHaveProperty(first.sessionId);
+    expect(deleted.sessions).not.toHaveProperty(second.sessionId);
+    expect(deleted.sessions).toHaveProperty(third.sessionId);
+    expect(deleted.nodes).not.toHaveProperty(third.data.sessions[first.sessionId].rootNodeId);
+    expect(deleted.nodes).not.toHaveProperty(third.data.sessions[second.sessionId].rootNodeId);
+    expect(deleted.nodes).toHaveProperty(third.data.sessions[third.sessionId].rootNodeId);
   });
 });

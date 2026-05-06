@@ -7,6 +7,7 @@ import {
 import {
   deleteAllSearchSessions,
   deleteSearchSession,
+  deleteSearchSessions,
   importLinkSpaceData,
   loadData,
   saveData
@@ -202,6 +203,15 @@ async function handleRuntimeMessage(message: RuntimeMessage): Promise<RuntimeRes
   if (message.type === 'DELETE_SESSION') {
     const data = await loadData();
     const updatedData = deleteSearchSession(data, message.sessionId);
+    await saveData(updatedData);
+    sessionByTab.clear();
+    currentNodeByTab.clear();
+    return { ok: true, data: updatedData };
+  }
+
+  if (message.type === 'DELETE_SESSIONS') {
+    const data = await loadData();
+    const updatedData = deleteSearchSessions(data, message.sessionIds);
     await saveData(updatedData);
     sessionByTab.clear();
     currentNodeByTab.clear();
