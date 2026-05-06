@@ -289,6 +289,124 @@ describe('background navigation collection', () => {
     });
   });
 
+  it('ends active sessions when recording is paused and does not attach later links after resume', async () => {
+    vi.setSystemTime(new Date('2026-05-06T00:12:00.000Z'));
+
+    const created = createSearchSession(createEmptyData(), {
+      query: 'pause privacy',
+      tabId: 16,
+      now: '2026-05-06T00:00:00.000Z'
+    });
+    localStorageMock.get.mockResolvedValue({ linkSpaceData: created.data });
+    localStorageMock.set.mockResolvedValue(undefined);
+    tabsMock.get.mockResolvedValue({ title: 'Later Link' });
+
+    await import('./index');
+    const messageListener = getRuntimeMessageListener();
+    const navigationListener = getNavigationListener();
+    const sendResponse = vi.fn();
+
+    messageListener(
+      { type: 'SET_RECORDING_PAUSED', paused: true },
+      {} as chrome.runtime.MessageSender,
+      sendResponse
+    );
+    await vi.runAllTimersAsync();
+
+    expect(sendResponse).toHaveBeenCalledWith({
+      ok: true,
+      data: expect.objectContaining({
+        settings: expect.objectContaining({
+          recordingPaused: true
+        }),
+        sessions: expect.objectContaining({
+          [created.sessionId]: expect.objectContaining({
+            status: 'ended',
+            endedAt: '2026-05-06T00:12:00.000Z'
+          })
+        })
+      })
+    });
+
+    const pausedResponse = sendResponse.mock.calls[0][0] as { ok: true; data: ReturnType<typeof createEmptyData> };
+    localStorageMock.set.mockClear();
+    sendResponse.mockClear();
+    localStorageMock.get.mockResolvedValue({ linkSpaceData: pausedResponse.data });
+
+    messageListener(
+      { type: 'SET_RECORDING_PAUSED', paused: false },
+      {} as chrome.runtime.MessageSender,
+      sendResponse
+    );
+    await vi.runAllTimersAsync();
+
+    const resumedResponse = sendResponse.mock.calls[0][0] as { ok: true; data: ReturnType<typeof createEmptyData> };
+    localStorageMock.set.mockClear();
+    localStorageMock.get.mockResolvedValue({ linkSpaceData: resumedResponse.data });
+
+    navigationListener(
+      createNavigationDetails({
+        tabId: 16,
+        url: 'https://example.com/later',
+        transitionType: 'link'
+      })
+    );
+    await vi.runAllTimersAsync();
+
+    expect(localStorageMock.set).not.toHaveBeenCalled();
+  });
+
+  it('ends active tab session without creating visits when navigation happens while paused', async () => {
+    vi.setSystemTime(new Date('2026-05-06T00:13:00.000Z'));
+
+    const created = createSearchSession(createEmptyData(), {
+      query: 'paused navigation',
+      tabId: 17,
+      now: '2026-05-06T00:00:00.000Z'
+    });
+    const pausedData = {
+      ...created.data,
+      settings: {
+        ...created.data.settings,
+        recordingPaused: true
+      }
+    };
+
+    localStorageMock.get.mockResolvedValue({ linkSpaceData: pausedData });
+    localStorageMock.set.mockResolvedValue(undefined);
+    tabsMock.get.mockResolvedValue({ title: 'Paused Link' });
+
+    await import('./index');
+    const listener = getNavigationListener();
+
+    listener(
+      createNavigationDetails({
+        tabId: 17,
+        url: 'https://example.com/paused',
+        transitionType: 'link'
+      })
+    );
+    await vi.runAllTimersAsync();
+
+    expect(localStorageMock.set).toHaveBeenCalledWith({
+      linkSpaceData: expect.objectContaining({
+        settings: expect.objectContaining({
+          recordingPaused: true
+        }),
+        sessions: expect.objectContaining({
+          [created.sessionId]: expect.objectContaining({
+            status: 'ended',
+            endedAt: '2026-05-06T00:13:00.000Z',
+            nodeIds: ['node-1']
+          })
+        }),
+        nodes: expect.not.objectContaining({
+          'node-2': expect.anything()
+        })
+      })
+    });
+  });
+
   it('ends active sessions for a tab when the tab is closed', async () => {
     vi.setSystemTime(new Date('2026-05-06T00:09:00.000Z'));
 

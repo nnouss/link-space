@@ -71,7 +71,12 @@ async function handleNavigation(details: chrome.webNavigation.WebNavigationTrans
   const expirationChanged = hasExpirationChanges(loadedData, data);
 
   if (data.settings.recordingPaused) {
-    await saveData(data);
+    data = endActiveSessionsForTab(data, details.tabId, now);
+    sessionByTab.delete(details.tabId);
+    lastNodeByTab.delete(details.tabId);
+    if (expirationChanged || hasSessionEndChanges(loadedData, data)) {
+      await saveData(data);
+    }
     return;
   }
 
@@ -143,14 +148,21 @@ async function handleRuntimeMessage(message: RuntimeMessage): Promise<RuntimeRes
   }
 
   if (message.type === 'SET_RECORDING_PAUSED') {
+    const now = new Date().toISOString();
     const data = await loadData();
-    const updatedData: LinkSpaceData = {
+    let updatedData: LinkSpaceData = {
       ...data,
       settings: {
         ...data.settings,
         recordingPaused: message.paused
       }
     };
+
+    if (message.paused) {
+      updatedData = endAllActiveSessions(updatedData, now);
+      sessionByTab.clear();
+      lastNodeByTab.clear();
+    }
 
     await saveData(updatedData);
     return { ok: true, data: updatedData };
@@ -267,6 +279,26 @@ function endActiveSessionsForTab(data: LinkSpaceData, tabId: number, now: string
     Object.entries(data.sessions).map(([sessionId, session]) => [
       sessionId,
       session.status === 'active' && session.tabId === tabId
+        ? {
+            ...session,
+            status: 'ended' as const,
+            endedAt: now
+          }
+        : session
+    ])
+  );
+
+  return {
+    ...data,
+    sessions
+  };
+}
+
+function endAllActiveSessions(data: LinkSpaceData, now: string): LinkSpaceData {
+  const sessions = Object.fromEntries(
+    Object.entries(data.sessions).map(([sessionId, session]) => [
+      sessionId,
+      session.status === 'active'
         ? {
             ...session,
             status: 'ended' as const,
