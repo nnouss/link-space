@@ -784,6 +784,94 @@ describe('background navigation collection', () => {
     expect(localStorageMock.set).not.toHaveBeenCalled();
   });
 
+  it('restores an existing parent page when browser back is reported as reload', async () => {
+    vi.setSystemTime(new Date('2026-05-07T00:18:00.000Z'));
+
+    const created = createBrowserSession(createEmptyData(), {
+      url: 'https://example.com/root',
+      title: 'Root Page',
+      tabId: 36,
+      now: '2026-05-07T00:00:00.000Z'
+    });
+    let currentData: LinkSpaceData = created.data;
+
+    localStorageMock.get.mockImplementation(() => Promise.resolve({ linkSpaceData: currentData }));
+    localStorageMock.set.mockImplementation(({ linkSpaceData }: { linkSpaceData: LinkSpaceData }) => {
+      currentData = linkSpaceData;
+      return Promise.resolve();
+    });
+    tabsMock.get.mockResolvedValue({ title: 'Visited Page' });
+
+    await import('./index');
+    const listener = getNavigationListener();
+
+    listener(createNavigationDetails({ tabId: 36, url: 'https://example.com/a' }));
+    await vi.runAllTimersAsync();
+    listener(createNavigationDetails({ tabId: 36, url: 'https://example.com/b' }));
+    await vi.runAllTimersAsync();
+
+    listener(
+      createNavigationDetails({
+        tabId: 36,
+        url: 'https://example.com/a',
+        transitionType: 'reload'
+      })
+    );
+    await vi.runAllTimersAsync();
+
+    expect(currentData.sessions[created.sessionId].nodeIds).toEqual(['node-1', 'node-2', 'node-3']);
+    expect(currentData.sessions[created.sessionId].edgeIds).toEqual(['edge-1', 'edge-2']);
+    expect(currentData.sessions[created.sessionId]).toEqual(
+      expect.objectContaining({
+        currentNodeId: 'node-2',
+        currentNodeIdByTab: expect.objectContaining({
+          36: 'node-2'
+        })
+      })
+    );
+  });
+
+  it('restores an existing page when browser back returns to a trailing-slash variant', async () => {
+    vi.setSystemTime(new Date('2026-05-07T00:19:00.000Z'));
+
+    const created = createBrowserSession(createEmptyData(), {
+      url: 'https://example.com/root',
+      title: 'Root Page',
+      tabId: 37,
+      now: '2026-05-07T00:00:00.000Z'
+    });
+    let currentData: LinkSpaceData = created.data;
+
+    localStorageMock.get.mockImplementation(() => Promise.resolve({ linkSpaceData: currentData }));
+    localStorageMock.set.mockImplementation(({ linkSpaceData }: { linkSpaceData: LinkSpaceData }) => {
+      currentData = linkSpaceData;
+      return Promise.resolve();
+    });
+    tabsMock.get.mockResolvedValue({ title: 'Visited Page' });
+
+    await import('./index');
+    const listener = getNavigationListener();
+
+    listener(createNavigationDetails({ tabId: 37, url: 'https://example.com/a' }));
+    await vi.runAllTimersAsync();
+    listener(createNavigationDetails({ tabId: 37, url: 'https://example.com/b' }));
+    await vi.runAllTimersAsync();
+
+    listener(createNavigationDetails({ tabId: 37, url: 'https://example.com/a/' }));
+    await vi.runAllTimersAsync();
+
+    expect(currentData.sessions[created.sessionId].nodeIds).toEqual(['node-1', 'node-2', 'node-3']);
+    expect(currentData.sessions[created.sessionId].edgeIds).toEqual(['edge-1', 'edge-2']);
+    expect(currentData.sessions[created.sessionId]).toEqual(
+      expect.objectContaining({
+        currentNodeId: 'node-2',
+        currentNodeIdByTab: expect.objectContaining({
+          37: 'node-2'
+        })
+      })
+    );
+  });
+
   it('keeps the opener tab current node after a child tab visit and worker restart', async () => {
     vi.setSystemTime(new Date('2026-05-06T00:12:45.000Z'));
 

@@ -533,12 +533,20 @@ function urlsReferToSamePage(left: string, right: string): boolean {
     const rightUrl = new URL(right);
     return (
       leftUrl.origin === rightUrl.origin &&
-      leftUrl.pathname === rightUrl.pathname &&
+      normalizePathname(leftUrl.pathname) === normalizePathname(rightUrl.pathname) &&
       leftUrl.search === rightUrl.search
     );
   } catch {
     return left === right;
   }
+}
+
+function normalizePathname(pathname: string): string {
+  if (pathname === '/') {
+    return pathname;
+  }
+
+  return pathname.replace(/\/+$/, '');
 }
 
 function findActiveSessionForTab(data: LinkSpaceData, tabId: number): SearchSession | undefined {
