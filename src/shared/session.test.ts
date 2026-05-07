@@ -166,6 +166,41 @@ describe('session logic', () => {
     expect(node.depth).toBe(1);
   });
 
+  it('reuses the current page node when a same-page refresh reaches page visit saving', () => {
+    const first = createSearchSession(createEmptyData(), {
+      query: 'refresh duplicate',
+      tabId: 1,
+      now: '2026-05-06T00:00:00.000Z'
+    });
+    const rootNodeId = first.data.sessions[first.sessionId].rootNodeId;
+    const added = addPageVisit(first.data, {
+      sessionId: first.sessionId,
+      fromNodeId: rootNodeId,
+      url: 'https://example.com/a',
+      title: 'A',
+      now: '2026-05-06T00:01:00.000Z',
+      isSearchResultClick: true,
+      tabId: 1
+    });
+    const refreshed = addPageVisit(added.data, {
+      sessionId: first.sessionId,
+      fromNodeId: added.nodeId,
+      url: 'https://example.com/a',
+      title: 'A refreshed',
+      now: '2026-05-06T00:02:00.000Z',
+      isSearchResultClick: false,
+      tabId: 1
+    });
+    const session = refreshed.data.sessions[first.sessionId];
+
+    expect(refreshed.nodeId).toBe(added.nodeId);
+    expect(session.nodeIds).toEqual([rootNodeId, added.nodeId]);
+    expect(session.edgeIds).toHaveLength(1);
+    expect(session.currentNodeId).toBe(added.nodeId);
+    expect(session.currentNodeIdByTab).toEqual({ 1: added.nodeId });
+    expect(refreshed.data.nodes[added.nodeId].visitCount).toBe(2);
+  });
+
   it('tracks current nodes independently per tab when a tab id is provided', () => {
     const first = createSearchSession(createEmptyData(), {
       query: 'per tab',

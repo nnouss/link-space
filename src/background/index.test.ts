@@ -884,6 +884,56 @@ describe('background navigation collection', () => {
     expect(localStorageMock.set).not.toHaveBeenCalled();
   });
 
+  it('does not add nodes when the same page refresh is reported as repeated link redirects', async () => {
+    vi.setSystemTime(new Date('2026-05-07T00:17:45.000Z'));
+
+    const created = createBrowserSession(createEmptyData(), {
+      url: 'https://example.com/root',
+      title: 'Root Page',
+      tabId: 40,
+      now: '2026-05-07T00:00:00.000Z'
+    });
+    let currentData: LinkSpaceData = created.data;
+
+    localStorageMock.get.mockImplementation(() => Promise.resolve({ linkSpaceData: currentData }));
+    localStorageMock.set.mockImplementation(({ linkSpaceData }: { linkSpaceData: LinkSpaceData }) => {
+      currentData = linkSpaceData;
+      return Promise.resolve();
+    });
+    tabsMock.get.mockResolvedValue({ title: 'Child Page' });
+
+    await import('./index');
+    const listener = getNavigationListener();
+
+    listener(createNavigationDetails({ tabId: 40, url: 'https://example.com/child' }));
+    await vi.runAllTimersAsync();
+    localStorageMock.set.mockClear();
+
+    for (let index = 0; index < 3; index += 1) {
+      listener(
+        createNavigationDetails({
+          tabId: 40,
+          url: 'https://example.com/child',
+          transitionType: 'link',
+          transitionQualifiers: ['server_redirect']
+        })
+      );
+      await vi.runAllTimersAsync();
+    }
+
+    expect(currentData.sessions[created.sessionId].nodeIds).toEqual(['node-1', 'node-2']);
+    expect(currentData.sessions[created.sessionId].edgeIds).toEqual(['edge-1']);
+    expect(currentData.sessions[created.sessionId]).toEqual(
+      expect.objectContaining({
+        currentNodeId: 'node-2',
+        currentNodeIdByTab: expect.objectContaining({
+          40: 'node-2'
+        })
+      })
+    );
+    expect(localStorageMock.set).not.toHaveBeenCalled();
+  });
+
   it('restores an existing parent page when browser back is reported as reload', async () => {
     vi.setSystemTime(new Date('2026-05-07T00:18:00.000Z'));
 
