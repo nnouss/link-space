@@ -715,6 +715,75 @@ describe('background navigation collection', () => {
     expect(currentData.sessions[created.sessionId].edgeIds).toEqual(['edge-1', 'edge-2', 'edge-3']);
   });
 
+  it('does not start a new session when an untracked tab reloads', async () => {
+    vi.setSystemTime(new Date('2026-05-07T00:16:00.000Z'));
+
+    localStorageMock.get.mockResolvedValue({ linkSpaceData: createEmptyData() });
+    localStorageMock.set.mockResolvedValue(undefined);
+    tabsMock.get.mockResolvedValue({ title: 'Reloaded Page' });
+
+    await import('./index');
+    const listener = getNavigationListener();
+
+    listener(
+      createNavigationDetails({
+        tabId: 34,
+        url: 'https://example.com/reloaded',
+        transitionType: 'reload'
+      })
+    );
+    await vi.runAllTimersAsync();
+
+    expect(localStorageMock.set).not.toHaveBeenCalled();
+  });
+
+  it('does not add a node when a child page reloads', async () => {
+    vi.setSystemTime(new Date('2026-05-07T00:17:00.000Z'));
+
+    const created = createBrowserSession(createEmptyData(), {
+      url: 'https://example.com/root',
+      title: 'Root Page',
+      tabId: 35,
+      now: '2026-05-07T00:00:00.000Z'
+    });
+    let currentData: LinkSpaceData = created.data;
+
+    localStorageMock.get.mockImplementation(() => Promise.resolve({ linkSpaceData: currentData }));
+    localStorageMock.set.mockImplementation(({ linkSpaceData }: { linkSpaceData: LinkSpaceData }) => {
+      currentData = linkSpaceData;
+      return Promise.resolve();
+    });
+    tabsMock.get.mockResolvedValue({ title: 'Child Page' });
+
+    await import('./index');
+    const listener = getNavigationListener();
+
+    listener(createNavigationDetails({ tabId: 35, url: 'https://example.com/child' }));
+    await vi.runAllTimersAsync();
+    localStorageMock.set.mockClear();
+
+    listener(
+      createNavigationDetails({
+        tabId: 35,
+        url: 'https://example.com/child',
+        transitionType: 'reload'
+      })
+    );
+    await vi.runAllTimersAsync();
+
+    expect(currentData.sessions[created.sessionId].nodeIds).toEqual(['node-1', 'node-2']);
+    expect(currentData.sessions[created.sessionId].edgeIds).toEqual(['edge-1']);
+    expect(currentData.sessions[created.sessionId]).toEqual(
+      expect.objectContaining({
+        currentNodeId: 'node-2',
+        currentNodeIdByTab: expect.objectContaining({
+          35: 'node-2'
+        })
+      })
+    );
+    expect(localStorageMock.set).not.toHaveBeenCalled();
+  });
+
   it('keeps the opener tab current node after a child tab visit and worker restart', async () => {
     vi.setSystemTime(new Date('2026-05-06T00:12:45.000Z'));
 

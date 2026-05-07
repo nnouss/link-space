@@ -18,7 +18,7 @@ type RuntimeResponse =
   | { ok: false; error: string };
 
 const INVALID_DATA_MESSAGE = 'Invalid Link Space data';
-const RECORDABLE_TRANSITION_TYPES = new Set(['link', 'form_submit', 'reload']);
+const RECORDABLE_TRANSITION_TYPES = new Set(['link', 'form_submit']);
 const REDIRECT_QUALIFIERS = new Set(['server_redirect', 'client_redirect']);
 const HISTORY_QUALIFIERS = new Set(['forward_back']);
 const DIRECT_TRANSITION_TYPES = new Set([
@@ -101,6 +101,16 @@ async function handleNavigation(details: chrome.webNavigation.WebNavigationTrans
 
   if (isHistoryNavigation(details)) {
     const restoredData = restoreCurrentNodeFromHistory(data, details.tabId, details.url);
+    if (restoredData) {
+      await saveNavigationData(restoredData, details.tabId, recordingStateVersionAtStart);
+    } else if (expirationChanged) {
+      await saveNavigationData(data, details.tabId, recordingStateVersionAtStart);
+    }
+    return;
+  }
+
+  if (isReloadNavigation(details)) {
+    const restoredData = restoreCurrentNodeFromReload(data, details.tabId, details.url);
     if (restoredData) {
       await saveNavigationData(restoredData, details.tabId, recordingStateVersionAtStart);
     } else if (expirationChanged) {
@@ -348,6 +358,12 @@ function isHistoryNavigation(
   return details.transitionQualifiers.some((qualifier) => HISTORY_QUALIFIERS.has(qualifier));
 }
 
+function isReloadNavigation(
+  details: chrome.webNavigation.WebNavigationTransitionCallbackDetails
+): boolean {
+  return details.transitionType === 'reload';
+}
+
 function isRecordableTransition(
   details: chrome.webNavigation.WebNavigationTransitionCallbackDetails
 ): boolean {
@@ -430,6 +446,29 @@ function restoreCurrentNodeFromHistory(data: LinkSpaceData, tabId: number, url: 
 
   sessionByTab.set(tabId, session.id);
   currentNodeByTab.set(tabId, node.id);
+  return setSessionCurrentNode(data, session.id, tabId, node.id);
+}
+
+function restoreCurrentNodeFromReload(data: LinkSpaceData, tabId: number, url: string): LinkSpaceData | undefined {
+  const session = findActiveSessionForTab(data, tabId);
+  if (!session) {
+    sessionByTab.delete(tabId);
+    currentNodeByTab.delete(tabId);
+    return undefined;
+  }
+
+  const node = findLatestSessionNodeByUrl(data, session, url);
+  if (!node) {
+    return undefined;
+  }
+
+  sessionByTab.set(tabId, session.id);
+  currentNodeByTab.set(tabId, node.id);
+
+  if (session.currentNodeIdByTab?.[String(tabId)] === node.id) {
+    return undefined;
+  }
+
   return setSessionCurrentNode(data, session.id, tabId, node.id);
 }
 
