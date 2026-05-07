@@ -6,6 +6,13 @@ interface CreateSearchSessionInput {
   now: string;
 }
 
+interface CreateBrowserSessionInput {
+  url: string;
+  title: string;
+  tabId: number;
+  now: string;
+}
+
 interface AddPageVisitInput {
   sessionId: string;
   fromNodeId: string;
@@ -13,6 +20,7 @@ interface AddPageVisitInput {
   title: string;
   now: string;
   isSearchResultClick: boolean;
+  tabId?: number;
 }
 
 export function createSearchSession(
@@ -41,6 +49,56 @@ export function createSearchSession(
     status: 'active',
     rootNodeId,
     currentNodeId: rootNodeId,
+    currentNodeIdByTab: { [input.tabId]: rootNodeId },
+    nodeIds: [rootNodeId],
+    edgeIds: [],
+    tabId: input.tabId
+  };
+
+  return {
+    data: {
+      ...data,
+      sessions: {
+        ...data.sessions,
+        [sessionId]: session
+      },
+      nodes: {
+        ...data.nodes,
+        [rootNodeId]: rootNode
+      }
+    },
+    sessionId
+  };
+}
+
+export function createBrowserSession(
+  data: LinkSpaceData,
+  input: CreateBrowserSessionInput
+): { data: LinkSpaceData; sessionId: string } {
+  const sessionId = createId('session', data.sessions);
+  const rootNodeId = createId('node', data.nodes);
+  const title = input.title || input.url;
+  const rootNode: PageNode = {
+    id: rootNodeId,
+    sessionId,
+    url: input.url,
+    title,
+    domain: parseDomain(input.url),
+    visitedAt: input.now,
+    visitCount: 1,
+    depth: 0,
+    isSearchResultClick: false
+  };
+  const session: SearchSession = {
+    id: sessionId,
+    query: title,
+    searchEngine: 'google',
+    startedAt: input.now,
+    lastActivityAt: input.now,
+    status: 'active',
+    rootNodeId,
+    currentNodeId: rootNodeId,
+    currentNodeIdByTab: { [input.tabId]: rootNodeId },
     nodeIds: [rootNodeId],
     edgeIds: [],
     tabId: input.tabId
@@ -101,7 +159,8 @@ export function addPageVisit(
           [input.sessionId]: {
             ...session,
             lastActivityAt: input.now,
-            currentNodeId: existingNodeId
+            currentNodeId: existingNodeId,
+            currentNodeIdByTab: updateCurrentNodeIdByTab(session, input.tabId, existingNodeId)
           }
         },
         nodes: {
@@ -148,6 +207,7 @@ export function addPageVisit(
           ...session,
           lastActivityAt: input.now,
           currentNodeId: nodeId,
+          currentNodeIdByTab: updateCurrentNodeIdByTab(session, input.tabId, nodeId),
           nodeIds: [...session.nodeIds, nodeId],
           edgeIds: [...session.edgeIds, edgeId]
         }
@@ -162,6 +222,21 @@ export function addPageVisit(
       }
     },
     nodeId
+  };
+}
+
+function updateCurrentNodeIdByTab(
+  session: SearchSession,
+  tabId: number | undefined,
+  nodeId: string
+): Record<string, string> | undefined {
+  if (typeof tabId !== 'number') {
+    return session.currentNodeIdByTab;
+  }
+
+  return {
+    ...session.currentNodeIdByTab,
+    [tabId]: nodeId
   };
 }
 

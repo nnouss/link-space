@@ -1,7 +1,6 @@
-import { parseGoogleSearch } from '../shared/google';
 import {
   addPageVisit,
-  createSearchSession,
+  createBrowserSession,
   endExpiredSessions
 } from '../shared/session';
 import {
@@ -19,7 +18,7 @@ type RuntimeResponse =
   | { ok: false; error: string };
 
 const INVALID_DATA_MESSAGE = 'Invalid Link Space data';
-const RECORDABLE_TRANSITION_TYPES = new Set(['link', 'form_submit', 'reload']);
+const RECORDABLE_TRANSITION_TYPES = new Set(['link', 'form_submit']);
 const REDIRECT_QUALIFIERS = new Set(['server_redirect', 'client_redirect']);
 const HISTORY_QUALIFIERS = new Set(['forward_back']);
 const DIRECT_TRANSITION_TYPES = new Set([
@@ -32,6 +31,7 @@ const DIRECT_TRANSITION_TYPES = new Set([
 const sessionByTab = new Map<number, string>();
 const currentNodeByTab = new Map<number, string>();
 const navigationQueueByTab = new Map<number, Promise<void>>();
+let recordingStateVersion = 0;
 
 chrome.webNavigation.onCommitted.addListener((details) => {
   enqueueNavigation(details);
@@ -82,6 +82,7 @@ async function handleNavigation(details: chrome.webNavigation.WebNavigationTrans
   }
 
   const now = new Date().toISOString();
+  const recordingStateVersionAtStart = recordingStateVersion;
   const loadedData = await loadData();
   let data = endExpiredSessions(loadedData, now);
   const expirationChanged = hasExpirationChanges(loadedData, data);
@@ -91,40 +92,29 @@ async function handleNavigation(details: chrome.webNavigation.WebNavigationTrans
     sessionByTab.delete(details.tabId);
     currentNodeByTab.delete(details.tabId);
     if (expirationChanged || hasSessionEndChanges(loadedData, data)) {
-      await saveData(data);
-    }
-    return;
-  }
-
-  const parsedSearch = parseGoogleSearch(details.url);
-  if (parsedSearch) {
-    const activeSession = findActiveSessionByTab(data, details.tabId);
-
-    if (!activeSession || activeSession.query !== parsedSearch.query) {
-      data = endActiveSessionsForTab(data, details.tabId, now);
-      const result = createSearchSession(data, {
-        query: parsedSearch.query,
-        tabId: details.tabId,
-        now
+      await saveNavigationData(data, details.tabId, recordingStateVersionAtStart, {
+        allowPausedSave: true
       });
-      data = result.data;
-      sessionByTab.set(details.tabId, result.sessionId);
-      currentNodeByTab.set(details.tabId, data.sessions[result.sessionId].rootNodeId);
-    } else {
-      sessionByTab.set(details.tabId, activeSession.id);
-      currentNodeByTab.set(details.tabId, activeSession.rootNodeId);
     }
-
-    await saveNavigationData(data, details.tabId);
     return;
   }
 
   if (isHistoryNavigation(details)) {
     const restoredData = restoreCurrentNodeFromHistory(data, details.tabId, details.url);
     if (restoredData) {
-      await saveNavigationData(restoredData, details.tabId);
+      await saveNavigationData(restoredData, details.tabId, recordingStateVersionAtStart);
     } else if (expirationChanged) {
-      await saveNavigationData(data, details.tabId);
+      await saveNavigationData(data, details.tabId, recordingStateVersionAtStart);
+    }
+    return;
+  }
+
+  if (isReloadNavigation(details)) {
+    const restoredData = restoreCurrentNodeFromReload(data, details.tabId, details.url);
+    if (restoredData) {
+      await saveNavigationData(restoredData, details.tabId, recordingStateVersionAtStart);
+    } else if (expirationChanged) {
+      await saveNavigationData(data, details.tabId, recordingStateVersionAtStart);
     }
     return;
   }
@@ -133,24 +123,56 @@ async function handleNavigation(details: chrome.webNavigation.WebNavigationTrans
     data = endActiveSessionsForTab(data, details.tabId, now);
     sessionByTab.delete(details.tabId);
     currentNodeByTab.delete(details.tabId);
-    if (expirationChanged || hasSessionEndChanges(loadedData, data)) {
-      await saveNavigationData(data, details.tabId);
+    const tab = await chrome.tabs.get(details.tabId);
+    const latestData = endActiveSessionsForTab(endExpiredSessions(await loadData(), now), details.tabId, now);
+
+    if (latestData.settings.recordingPaused || recordingStateVersionAtStart !== recordingStateVersion) {
+      sessionByTab.delete(details.tabId);
+      currentNodeByTab.delete(details.tabId);
+      return;
     }
+
+    const result = createBrowserSession(latestData, {
+      url: details.url,
+      title: tab.title || details.url,
+      tabId: details.tabId,
+      now
+    });
+    data = result.data;
+    sessionByTab.set(details.tabId, result.sessionId);
+    currentNodeByTab.set(details.tabId, data.sessions[result.sessionId].rootNodeId);
+    await saveNavigationData(data, details.tabId, recordingStateVersionAtStart);
     return;
   }
 
   const source = resolveNavigationSource(data, details.tabId);
 
   if (!source) {
-    if (expirationChanged) {
-      await saveNavigationData(data, details.tabId);
+    const tab = await chrome.tabs.get(details.tabId);
+    const latestData = endExpiredSessions(await loadData(), now);
+
+    if (latestData.settings.recordingPaused || recordingStateVersionAtStart !== recordingStateVersion) {
+      sessionByTab.delete(details.tabId);
+      currentNodeByTab.delete(details.tabId);
+      return;
     }
+
+    const result = createBrowserSession(latestData, {
+      url: details.url,
+      title: tab.title || details.url,
+      tabId: details.tabId,
+      now
+    });
+    data = result.data;
+    sessionByTab.set(details.tabId, result.sessionId);
+    currentNodeByTab.set(details.tabId, data.sessions[result.sessionId].rootNodeId);
+    await saveNavigationData(data, details.tabId, recordingStateVersionAtStart);
     return;
   }
 
   const restoredData = restoreExistingSessionNodeForNavigation(data, source.sessionId, details.tabId, details.url);
   if (restoredData) {
-    await saveNavigationData(restoredData, details.tabId);
+    await saveNavigationData(restoredData, details.tabId, recordingStateVersionAtStart);
     return;
   }
 
@@ -161,7 +183,8 @@ async function handleNavigation(details: chrome.webNavigation.WebNavigationTrans
     url: details.url,
     title: tab.title || details.url,
     now,
-    isSearchResultClick: source.fromNode.depth === 0
+    isSearchResultClick: source.fromNode.depth === 0,
+    recordingStateVersionAtStart
   });
 
   if (result) {
@@ -181,6 +204,7 @@ async function handleRuntimeMessage(message: RuntimeMessage): Promise<RuntimeRes
   }
 
   if (message.type === 'SET_RECORDING_PAUSED') {
+    recordingStateVersion += 1;
     const now = new Date().toISOString();
     const data = await loadData();
     let updatedData: LinkSpaceData = {
@@ -255,9 +279,17 @@ async function handleTabRemoved(tabId: number) {
   await saveData(data);
 }
 
-async function saveNavigationData(data: LinkSpaceData, tabId: number): Promise<boolean> {
+async function saveNavigationData(
+  data: LinkSpaceData,
+  tabId: number,
+  recordingStateVersionAtStart: number,
+  options: { allowPausedSave?: boolean } = {}
+): Promise<boolean> {
   const latestData = await loadData();
-  if (latestData.settings.recordingPaused) {
+  if (
+    (!options.allowPausedSave && latestData.settings.recordingPaused) ||
+    recordingStateVersionAtStart !== recordingStateVersion
+  ) {
     sessionByTab.delete(tabId);
     currentNodeByTab.delete(tabId);
     return false;
@@ -276,6 +308,7 @@ async function savePageVisit(
     title: string;
     now: string;
     isSearchResultClick: boolean;
+    recordingStateVersionAtStart: number;
   }
 ): Promise<{ nodeId: string } | undefined> {
   const latestData = await loadData();
@@ -284,8 +317,9 @@ async function savePageVisit(
 
   if (
     latestData.settings.recordingPaused ||
+    input.recordingStateVersionAtStart !== recordingStateVersion ||
     latestSession?.status !== 'active' ||
-    (latestSession.tabId !== tabId && sessionByTab.get(tabId) !== input.sessionId) ||
+    !sessionBelongsToTab(latestSession, tabId, input.sessionId) ||
     !latestSession.nodeIds.includes(input.fromNodeId) ||
     latestSourceNode?.sessionId !== input.sessionId
   ) {
@@ -296,7 +330,8 @@ async function savePageVisit(
 
   const result = addPageVisit(latestData, {
     ...input,
-    isSearchResultClick: latestSourceNode.depth === 0
+    isSearchResultClick: latestSourceNode.depth === 0,
+    tabId
   });
   await saveData(result.data);
   return { nodeId: result.nodeId };
@@ -321,6 +356,12 @@ function isHistoryNavigation(
   details: chrome.webNavigation.WebNavigationTransitionCallbackDetails
 ): boolean {
   return details.transitionQualifiers.some((qualifier) => HISTORY_QUALIFIERS.has(qualifier));
+}
+
+function isReloadNavigation(
+  details: chrome.webNavigation.WebNavigationTransitionCallbackDetails
+): boolean {
+  return details.transitionType === 'reload';
 }
 
 function isRecordableTransition(
@@ -365,12 +406,16 @@ function resolveNavigationSource(
     };
   }
 
-  const fallbackSession = findActiveSessionByTab(data, tabId);
+  const fallbackSession = findActiveSessionForTab(data, tabId);
   if (!fallbackSession) {
     return undefined;
   }
 
-  const fallbackNodeId = fallbackSession.currentNodeId ?? fallbackSession.nodeIds.at(-1) ?? fallbackSession.rootNodeId;
+  const fallbackNodeId =
+    fallbackSession.currentNodeIdByTab?.[String(tabId)] ??
+    fallbackSession.currentNodeId ??
+    fallbackSession.nodeIds.at(-1) ??
+    fallbackSession.rootNodeId;
   const fallbackNode = data.nodes[fallbackNodeId] ?? data.nodes[fallbackSession.rootNodeId];
   if (!fallbackNode) {
     return undefined;
@@ -387,7 +432,7 @@ function resolveNavigationSource(
 }
 
 function restoreCurrentNodeFromHistory(data: LinkSpaceData, tabId: number, url: string): LinkSpaceData | undefined {
-  const session = findActiveSessionByTab(data, tabId);
+  const session = findActiveSessionForTab(data, tabId);
   if (!session) {
     sessionByTab.delete(tabId);
     currentNodeByTab.delete(tabId);
@@ -401,17 +446,14 @@ function restoreCurrentNodeFromHistory(data: LinkSpaceData, tabId: number, url: 
 
   sessionByTab.set(tabId, session.id);
   currentNodeByTab.set(tabId, node.id);
-  return setSessionCurrentNode(data, session.id, node.id);
+  return setSessionCurrentNode(data, session.id, tabId, node.id);
 }
 
-function restoreExistingSessionNodeForNavigation(
-  data: LinkSpaceData,
-  sessionId: string,
-  tabId: number,
-  url: string
-): LinkSpaceData | undefined {
-  const session = data.sessions[sessionId];
-  if (!session || session.status !== 'active' || session.tabId !== tabId) {
+function restoreCurrentNodeFromReload(data: LinkSpaceData, tabId: number, url: string): LinkSpaceData | undefined {
+  const session = findActiveSessionForTab(data, tabId);
+  if (!session) {
+    sessionByTab.delete(tabId);
+    currentNodeByTab.delete(tabId);
     return undefined;
   }
 
@@ -422,17 +464,49 @@ function restoreExistingSessionNodeForNavigation(
 
   sessionByTab.set(tabId, session.id);
   currentNodeByTab.set(tabId, node.id);
-  return setSessionCurrentNode(data, session.id, node.id);
+
+  if (session.currentNodeIdByTab?.[String(tabId)] === node.id) {
+    return undefined;
+  }
+
+  return setSessionCurrentNode(data, session.id, tabId, node.id);
 }
 
-function setSessionCurrentNode(data: LinkSpaceData, sessionId: string, nodeId: string): LinkSpaceData {
+function restoreExistingSessionNodeForNavigation(
+  data: LinkSpaceData,
+  sessionId: string,
+  tabId: number,
+  url: string
+): LinkSpaceData | undefined {
+  const session = data.sessions[sessionId];
+  if (!session || session.status !== 'active' || !sessionBelongsToTab(session, tabId, sessionId)) {
+    return undefined;
+  }
+
+  const node = findLatestSessionNodeByUrl(data, session, url);
+  if (!node) {
+    return undefined;
+  }
+
+  sessionByTab.set(tabId, session.id);
+  currentNodeByTab.set(tabId, node.id);
+  return setSessionCurrentNode(data, session.id, tabId, node.id);
+}
+
+function setSessionCurrentNode(data: LinkSpaceData, sessionId: string, tabId: number, nodeId: string): LinkSpaceData {
+  const session = data.sessions[sessionId];
+
   return {
     ...data,
     sessions: {
       ...data.sessions,
       [sessionId]: {
-        ...data.sessions[sessionId],
-        currentNodeId: nodeId
+        ...session,
+        currentNodeId: nodeId,
+        currentNodeIdByTab: {
+          ...session.currentNodeIdByTab,
+          [tabId]: nodeId
+        }
       }
     }
   };
@@ -459,7 +533,7 @@ function urlsReferToSamePage(left: string, right: string): boolean {
     const rightUrl = new URL(right);
     return (
       leftUrl.origin === rightUrl.origin &&
-      leftUrl.pathname === rightUrl.pathname &&
+      normalizePathname(leftUrl.pathname) === normalizePathname(rightUrl.pathname) &&
       leftUrl.search === rightUrl.search
     );
   } catch {
@@ -467,9 +541,43 @@ function urlsReferToSamePage(left: string, right: string): boolean {
   }
 }
 
+function normalizePathname(pathname: string): string {
+  if (pathname === '/') {
+    return pathname;
+  }
+
+  return pathname.replace(/\/+$/, '');
+}
+
+function findActiveSessionForTab(data: LinkSpaceData, tabId: number): SearchSession | undefined {
+  const trackedSessionId = sessionByTab.get(tabId);
+  const trackedSession = trackedSessionId ? data.sessions[trackedSessionId] : undefined;
+  if (trackedSession?.status === 'active') {
+    return trackedSession;
+  }
+
+  const persistedSession = findLatestActiveSession(
+    Object.values(data.sessions).filter((session) => session.currentNodeIdByTab?.[String(tabId)])
+  );
+  if (persistedSession) {
+    return persistedSession;
+  }
+
+  return findActiveSessionByTab(data, tabId);
+}
+
 function findActiveSessionByTab(data: LinkSpaceData, tabId: number): SearchSession | undefined {
   return findLatestActiveSession(
     Object.values(data.sessions).filter((session) => session.tabId === tabId)
+  );
+}
+
+function sessionBelongsToTab(session: SearchSession | undefined, tabId: number, sessionId: string): boolean {
+  return Boolean(
+    session &&
+      (session.tabId === tabId ||
+        sessionByTab.get(tabId) === sessionId ||
+        session.currentNodeIdByTab?.[String(tabId)])
   );
 }
 
