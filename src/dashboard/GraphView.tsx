@@ -46,7 +46,7 @@ const NODE_COLORS = [
   '#d7bf72',
   '#dc8f82'
 ];
-const BACKGROUND_COLOR = '#111820';
+const BACKGROUND_COLOR = 'rgb(17, 24, 32)';
 const ROOT_COLOR = '#7de6bd';
 const ROOT_RING_COLOR = '#a4f4d2';
 
