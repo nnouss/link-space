@@ -784,6 +784,55 @@ describe('background navigation collection', () => {
     expect(localStorageMock.set).not.toHaveBeenCalled();
   });
 
+  it('does not add a node when a child page refresh is reported as generated navigation', async () => {
+    vi.setSystemTime(new Date('2026-05-07T00:17:30.000Z'));
+
+    const created = createBrowserSession(createEmptyData(), {
+      url: 'https://example.com/root',
+      title: 'Root Page',
+      tabId: 38,
+      now: '2026-05-07T00:00:00.000Z'
+    });
+    let currentData: LinkSpaceData = created.data;
+
+    localStorageMock.get.mockImplementation(() => Promise.resolve({ linkSpaceData: currentData }));
+    localStorageMock.set.mockImplementation(({ linkSpaceData }: { linkSpaceData: LinkSpaceData }) => {
+      currentData = linkSpaceData;
+      return Promise.resolve();
+    });
+    tabsMock.get.mockResolvedValue({ title: 'Child Page' });
+
+    await import('./index');
+    const listener = getNavigationListener();
+
+    listener(createNavigationDetails({ tabId: 38, url: 'https://example.com/child' }));
+    await vi.runAllTimersAsync();
+    localStorageMock.set.mockClear();
+
+    listener(
+      createNavigationDetails({
+        tabId: 38,
+        url: 'https://example.com/child',
+        transitionType: 'generated'
+      })
+    );
+    await vi.runAllTimersAsync();
+
+    expect(currentData.sessions[created.sessionId].nodeIds).toEqual(['node-1', 'node-2']);
+    expect(currentData.sessions[created.sessionId].edgeIds).toEqual(['edge-1']);
+    expect(currentData.sessions[created.sessionId]).toEqual(
+      expect.objectContaining({
+        status: 'active',
+        currentNodeId: 'node-2',
+        currentNodeIdByTab: expect.objectContaining({
+          38: 'node-2'
+        })
+      })
+    );
+    expect(currentData.sessions['session-2']).toBeUndefined();
+    expect(localStorageMock.set).not.toHaveBeenCalled();
+  });
+
   it('restores an existing parent page when browser back is reported as reload', async () => {
     vi.setSystemTime(new Date('2026-05-07T00:18:00.000Z'));
 

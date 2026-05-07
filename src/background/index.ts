@@ -119,6 +119,17 @@ async function handleNavigation(details: chrome.webNavigation.WebNavigationTrans
     return;
   }
 
+  const source = resolveNavigationSource(data, details.tabId);
+  const restoredExisting = source
+    ? restoreExistingSessionNodeForNavigation(data, source.sessionId, details.tabId, details.url)
+    : undefined;
+  if (restoredExisting) {
+    if (restoredExisting.changed || expirationChanged) {
+      await saveNavigationData(restoredExisting.data, details.tabId, recordingStateVersionAtStart);
+    }
+    return;
+  }
+
   if (!isRecordableTransition(details)) {
     data = endActiveSessionsForTab(data, details.tabId, now);
     sessionByTab.delete(details.tabId);
@@ -145,8 +156,6 @@ async function handleNavigation(details: chrome.webNavigation.WebNavigationTrans
     return;
   }
 
-  const source = resolveNavigationSource(data, details.tabId);
-
   if (!source) {
     const tab = await chrome.tabs.get(details.tabId);
     const latestData = endExpiredSessions(await loadData(), now);
@@ -167,12 +176,6 @@ async function handleNavigation(details: chrome.webNavigation.WebNavigationTrans
     sessionByTab.set(details.tabId, result.sessionId);
     currentNodeByTab.set(details.tabId, data.sessions[result.sessionId].rootNodeId);
     await saveNavigationData(data, details.tabId, recordingStateVersionAtStart);
-    return;
-  }
-
-  const restoredData = restoreExistingSessionNodeForNavigation(data, source.sessionId, details.tabId, details.url);
-  if (restoredData) {
-    await saveNavigationData(restoredData, details.tabId, recordingStateVersionAtStart);
     return;
   }
 
@@ -477,7 +480,7 @@ function restoreExistingSessionNodeForNavigation(
   sessionId: string,
   tabId: number,
   url: string
-): LinkSpaceData | undefined {
+): { data: LinkSpaceData; changed: boolean } | undefined {
   const session = data.sessions[sessionId];
   if (!session || session.status !== 'active' || !sessionBelongsToTab(session, tabId, sessionId)) {
     return undefined;
@@ -490,7 +493,14 @@ function restoreExistingSessionNodeForNavigation(
 
   sessionByTab.set(tabId, session.id);
   currentNodeByTab.set(tabId, node.id);
-  return setSessionCurrentNode(data, session.id, tabId, node.id);
+  if (session.currentNodeIdByTab?.[String(tabId)] === node.id) {
+    return { data, changed: false };
+  }
+
+  return {
+    data: setSessionCurrentNode(data, session.id, tabId, node.id),
+    changed: true
+  };
 }
 
 function setSessionCurrentNode(data: LinkSpaceData, sessionId: string, tabId: number, nodeId: string): LinkSpaceData {
