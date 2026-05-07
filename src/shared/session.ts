@@ -147,7 +147,7 @@ export function addPageVisit(
     throw new Error('Source node does not belong to session');
   }
 
-  const existingNodeId = findExistingChildNodeId(data, session, input.fromNodeId, input.url);
+  const existingNodeId = findExistingSessionNodeId(data, session, input.url);
   if (existingNodeId) {
     const existingNode = data.nodes[existingNodeId];
 
@@ -240,19 +240,40 @@ function updateCurrentNodeIdByTab(
   };
 }
 
-function findExistingChildNodeId(
+function findExistingSessionNodeId(
   data: LinkSpaceData,
   session: SearchSession,
-  fromNodeId: string,
   url: string
 ): string | undefined {
-  return session.edgeIds
-    .map((edgeId) => data.edges[edgeId])
-    .find((edge) => {
-      const targetNode = edge ? data.nodes[edge.toNodeId] : undefined;
+  return [...session.nodeIds]
+    .reverse()
+    .find((nodeId) => {
+      const node = data.nodes[nodeId];
 
-      return edge?.fromNodeId === fromNodeId && targetNode?.url === url;
-    })?.toNodeId;
+      return node?.sessionId === session.id && urlsReferToSamePage(node.url, url);
+    });
+}
+
+function urlsReferToSamePage(left: string, right: string): boolean {
+  try {
+    const leftUrl = new URL(left);
+    const rightUrl = new URL(right);
+    return (
+      leftUrl.origin === rightUrl.origin &&
+      normalizePathname(leftUrl.pathname) === normalizePathname(rightUrl.pathname) &&
+      leftUrl.search === rightUrl.search
+    );
+  } catch {
+    return left === right;
+  }
+}
+
+function normalizePathname(pathname: string): string {
+  if (pathname === '/') {
+    return pathname;
+  }
+
+  return pathname.replace(/\/+$/, '');
 }
 
 export function endExpiredSessions(data: LinkSpaceData, now: string): LinkSpaceData {

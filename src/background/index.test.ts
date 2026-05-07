@@ -520,6 +520,57 @@ describe('background navigation collection', () => {
     expect(currentData.sessions[created.sessionId].edgeIds).toEqual(['edge-1', 'edge-2', 'edge-3']);
   });
 
+  it('does not create a deeper duplicate when returning to an earlier page from a deeper node', async () => {
+    vi.setSystemTime(new Date('2026-05-06T00:08:30.000Z'));
+
+    const created = createSearchSession(createEmptyData(), {
+      query: 'deep back dedupe',
+      tabId: 39,
+      now: '2026-05-06T00:00:00.000Z'
+    });
+    let currentData: LinkSpaceData = created.data;
+
+    localStorageMock.get.mockImplementation(() => Promise.resolve({ linkSpaceData: currentData }));
+    localStorageMock.set.mockImplementation(({ linkSpaceData }: { linkSpaceData: LinkSpaceData }) => {
+      currentData = linkSpaceData;
+      return Promise.resolve();
+    });
+    tabsMock.get.mockImplementation(() => Promise.resolve({ title: 'Visited Page' }));
+
+    await import('./index');
+    const listener = getNavigationListener();
+
+    listener(createNavigationDetails({ tabId: 39, url: 'https://example.com/a' }));
+    await vi.runAllTimersAsync();
+    listener(createNavigationDetails({ tabId: 39, url: 'https://example.com/b' }));
+    await vi.runAllTimersAsync();
+    listener(createNavigationDetails({ tabId: 39, url: 'https://example.com/c' }));
+    await vi.runAllTimersAsync();
+    listener(createNavigationDetails({ tabId: 39, url: 'https://example.com/a' }));
+    await vi.runAllTimersAsync();
+
+    expect(currentData.sessions[created.sessionId].nodeIds).toEqual([
+      'node-1',
+      'node-2',
+      'node-3',
+      'node-4'
+    ]);
+    expect(currentData.sessions[created.sessionId].edgeIds).toEqual(['edge-1', 'edge-2', 'edge-3']);
+    expect(currentData.sessions[created.sessionId]).toEqual(
+      expect.objectContaining({
+        currentNodeId: 'node-2',
+        currentNodeIdByTab: expect.objectContaining({
+          39: 'node-2'
+        })
+      })
+    );
+    expect(currentData.nodes['node-2']).toMatchObject({
+      url: 'https://example.com/a',
+      depth: 1
+    });
+    expect(currentData.nodes['node-5']).toBeUndefined();
+  });
+
   it('keeps the restored page after the background worker restarts before the next click', async () => {
     vi.setSystemTime(new Date('2026-05-06T00:09:00.000Z'));
 

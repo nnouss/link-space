@@ -120,6 +120,52 @@ describe('session logic', () => {
     expect(node.title).toBe('A');
   });
 
+  it('reuses an existing session node when the same URL is visited again from a different page', () => {
+    const first = createSearchSession(createEmptyData(), {
+      query: 'back duplicate',
+      tabId: 1,
+      now: '2026-05-06T00:00:00.000Z'
+    });
+    const rootNodeId = first.data.sessions[first.sessionId].rootNodeId;
+    const firstVisit = addPageVisit(first.data, {
+      sessionId: first.sessionId,
+      fromNodeId: rootNodeId,
+      url: 'https://example.com/a',
+      title: 'A',
+      now: '2026-05-06T00:01:00.000Z',
+      isSearchResultClick: true,
+      tabId: 1
+    });
+    const secondVisit = addPageVisit(firstVisit.data, {
+      sessionId: first.sessionId,
+      fromNodeId: firstVisit.nodeId,
+      url: 'https://example.com/b',
+      title: 'B',
+      now: '2026-05-06T00:02:00.000Z',
+      isSearchResultClick: false,
+      tabId: 1
+    });
+    const restored = addPageVisit(secondVisit.data, {
+      sessionId: first.sessionId,
+      fromNodeId: secondVisit.nodeId,
+      url: 'https://example.com/a',
+      title: 'A again',
+      now: '2026-05-06T00:03:00.000Z',
+      isSearchResultClick: false,
+      tabId: 1
+    });
+    const session = restored.data.sessions[first.sessionId];
+    const node = restored.data.nodes[firstVisit.nodeId];
+
+    expect(restored.nodeId).toBe(firstVisit.nodeId);
+    expect(session.nodeIds).toEqual([rootNodeId, firstVisit.nodeId, secondVisit.nodeId]);
+    expect(session.edgeIds).toHaveLength(2);
+    expect(session.currentNodeId).toBe(firstVisit.nodeId);
+    expect(session.currentNodeIdByTab).toEqual({ 1: firstVisit.nodeId });
+    expect(node.visitCount).toBe(2);
+    expect(node.depth).toBe(1);
+  });
+
   it('tracks current nodes independently per tab when a tab id is provided', () => {
     const first = createSearchSession(createEmptyData(), {
       query: 'per tab',
