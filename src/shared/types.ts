@@ -10,6 +10,7 @@ export interface SearchSession {
   lastActivityAt: string;
   status: SessionStatus;
   rootNodeId: string;
+  currentNodeId?: string;
   nodeIds: string[];
   edgeIds: string[];
   tabId?: number;

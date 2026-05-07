@@ -12,12 +12,17 @@ const webNavigationMock = chrome.webNavigation.onCommitted as unknown as {
   addListener: ReturnType<typeof vi.fn>;
 };
 
+const historyStateNavigationMock = chrome.webNavigation.onHistoryStateUpdated as unknown as {
+  addListener: ReturnType<typeof vi.fn>;
+};
+
 const runtimeMessageMock = chrome.runtime.onMessage as unknown as {
   addListener: ReturnType<typeof vi.fn>;
 };
 
 const tabsMock = chrome.tabs as unknown as {
   get: ReturnType<typeof vi.fn>;
+  onCreated: { addListener: ReturnType<typeof vi.fn> };
   onRemoved: { addListener: ReturnType<typeof vi.fn> };
 };
 
@@ -284,6 +289,202 @@ describe('background navigation collection', () => {
       fromUrl: 'https://example.com/a'
     });
     expect(currentData.sessions[created.sessionId].edgeIds).toEqual(['edge-1', 'edge-2', 'edge-3']);
+  });
+
+  it('restores an existing page instead of adding a new edge when browser back is reported as a link navigation', async () => {
+    vi.setSystemTime(new Date('2026-05-06T00:08:00.000Z'));
+
+    const created = createSearchSession(createEmptyData(), {
+      query: 'back dedupe',
+      tabId: 22,
+      now: '2026-05-06T00:00:00.000Z'
+    });
+    let currentData: LinkSpaceData = created.data;
+
+    localStorageMock.get.mockImplementation(() => Promise.resolve({ linkSpaceData: currentData }));
+    localStorageMock.set.mockImplementation(({ linkSpaceData }: { linkSpaceData: LinkSpaceData }) => {
+      currentData = linkSpaceData;
+      return Promise.resolve();
+    });
+    tabsMock.get.mockImplementation(() => Promise.resolve({ title: 'Visited Page' }));
+
+    await import('./index');
+    const listener = getNavigationListener();
+
+    listener(createNavigationDetails({ tabId: 22, url: 'https://example.com/a' }));
+    await vi.runAllTimersAsync();
+
+    listener(createNavigationDetails({ tabId: 22, url: 'https://example.com/b' }));
+    await vi.runAllTimersAsync();
+
+    listener(createNavigationDetails({ tabId: 22, url: 'https://example.com/a' }));
+    await vi.runAllTimersAsync();
+
+    listener(createNavigationDetails({ tabId: 22, url: 'https://example.com/c' }));
+    await vi.runAllTimersAsync();
+
+    expect(currentData.sessions[created.sessionId].nodeIds).toEqual([
+      'node-1',
+      'node-2',
+      'node-3',
+      'node-4'
+    ]);
+    expect(currentData.nodes['node-2']).toMatchObject({
+      url: 'https://example.com/a',
+      depth: 1
+    });
+    expect(currentData.nodes['node-3']).toMatchObject({
+      url: 'https://example.com/b',
+      depth: 2,
+      fromUrl: 'https://example.com/a'
+    });
+    expect(currentData.nodes['node-4']).toMatchObject({
+      url: 'https://example.com/c',
+      depth: 2,
+      fromUrl: 'https://example.com/a'
+    });
+    expect(currentData.sessions[created.sessionId].edgeIds).toEqual(['edge-1', 'edge-2', 'edge-3']);
+  });
+
+  it('keeps the restored page after the background worker restarts before the next click', async () => {
+    vi.setSystemTime(new Date('2026-05-06T00:09:00.000Z'));
+
+    const created = createSearchSession(createEmptyData(), {
+      query: 'back restart',
+      tabId: 23,
+      now: '2026-05-06T00:00:00.000Z'
+    });
+    let currentData: LinkSpaceData = created.data;
+
+    localStorageMock.get.mockImplementation(() => Promise.resolve({ linkSpaceData: currentData }));
+    localStorageMock.set.mockImplementation(({ linkSpaceData }: { linkSpaceData: LinkSpaceData }) => {
+      currentData = linkSpaceData;
+      return Promise.resolve();
+    });
+    tabsMock.get.mockImplementation(() => Promise.resolve({ title: 'Visited Page' }));
+
+    await import('./index');
+    let listener = getNavigationListener();
+
+    listener(createNavigationDetails({ tabId: 23, url: 'https://example.com/a' }));
+    await vi.runAllTimersAsync();
+
+    listener(createNavigationDetails({ tabId: 23, url: 'https://example.com/b' }));
+    await vi.runAllTimersAsync();
+
+    listener(
+      createNavigationDetails({
+        tabId: 23,
+        url: 'https://example.com/a',
+        transitionQualifiers: ['forward_back']
+      })
+    );
+    await vi.runAllTimersAsync();
+
+    expect(currentData.sessions[created.sessionId]).toEqual(
+      expect.objectContaining({
+        currentNodeId: 'node-2'
+      })
+    );
+
+    vi.resetModules();
+    await import('./index');
+    listener = getNavigationListener();
+
+    listener(createNavigationDetails({ tabId: 23, url: 'https://example.com/c' }));
+    await vi.runAllTimersAsync();
+
+    expect(currentData.sessions[created.sessionId].nodeIds).toEqual([
+      'node-1',
+      'node-2',
+      'node-3',
+      'node-4'
+    ]);
+    expect(currentData.nodes['node-4']).toMatchObject({
+      url: 'https://example.com/c',
+      depth: 2,
+      fromUrl: 'https://example.com/a'
+    });
+    expect(currentData.sessions[created.sessionId].edgeIds).toEqual(['edge-1', 'edge-2', 'edge-3']);
+  });
+
+  it('records a site-internal SPA navigation as a linked page visit', async () => {
+    vi.setSystemTime(new Date('2026-05-06T00:11:00.000Z'));
+
+    const created = createSearchSession(createEmptyData(), {
+      query: 'coupang',
+      tabId: 24,
+      now: '2026-05-06T00:00:00.000Z'
+    });
+    let currentData: LinkSpaceData = created.data;
+
+    localStorageMock.get.mockImplementation(() => Promise.resolve({ linkSpaceData: currentData }));
+    localStorageMock.set.mockImplementation(({ linkSpaceData }: { linkSpaceData: LinkSpaceData }) => {
+      currentData = linkSpaceData;
+      return Promise.resolve();
+    });
+    tabsMock.get.mockImplementation(() => Promise.resolve({ title: 'Coupang Product' }));
+
+    await import('./index');
+    const committedListener = getNavigationListener();
+    const historyListener = getHistoryStateNavigationListener();
+
+    committedListener(createNavigationDetails({ tabId: 24, url: 'https://www.coupang.com/np/search?q=keyboard' }));
+    await vi.runAllTimersAsync();
+
+    historyListener(
+      createNavigationDetails({
+        tabId: 24,
+        url: 'https://www.coupang.com/vp/products/123',
+        transitionType: 'link'
+      })
+    );
+    await vi.runAllTimersAsync();
+
+    expect(currentData.sessions[created.sessionId].nodeIds).toEqual(['node-1', 'node-2', 'node-3']);
+    expect(currentData.nodes['node-3']).toMatchObject({
+      url: 'https://www.coupang.com/vp/products/123',
+      fromUrl: 'https://www.coupang.com/np/search?q=keyboard'
+    });
+  });
+
+  it('links a page opened in a new tab back to the opener page', async () => {
+    vi.setSystemTime(new Date('2026-05-06T00:12:00.000Z'));
+
+    const created = createSearchSession(createEmptyData(), {
+      query: 'new tab',
+      tabId: 25,
+      now: '2026-05-06T00:00:00.000Z'
+    });
+    let currentData: LinkSpaceData = created.data;
+
+    localStorageMock.get.mockImplementation(() => Promise.resolve({ linkSpaceData: currentData }));
+    localStorageMock.set.mockImplementation(({ linkSpaceData }: { linkSpaceData: LinkSpaceData }) => {
+      currentData = linkSpaceData;
+      return Promise.resolve();
+    });
+    tabsMock.get.mockImplementation((tabId: number) =>
+      Promise.resolve({ title: tabId === 26 ? 'Opened Product' : 'Coupang Search' })
+    );
+
+    await import('./index');
+    const navigationListener = getNavigationListener();
+    const tabCreatedListener = getTabCreatedListener();
+
+    navigationListener(createNavigationDetails({ tabId: 25, url: 'https://www.coupang.com/np/search?q=mouse' }));
+    await vi.runAllTimersAsync();
+
+    tabCreatedListener({ id: 26, openerTabId: 25 } as chrome.tabs.Tab);
+
+    navigationListener(createNavigationDetails({ tabId: 26, url: 'https://www.coupang.com/vp/products/456' }));
+    await vi.runAllTimersAsync();
+
+    expect(currentData.sessions[created.sessionId].nodeIds).toEqual(['node-1', 'node-2', 'node-3']);
+    expect(currentData.nodes['node-3']).toMatchObject({
+      url: 'https://www.coupang.com/vp/products/456',
+      fromUrl: 'https://www.coupang.com/np/search?q=mouse',
+      title: 'Opened Product'
+    });
   });
 
   it('does not let an in-flight navigation overwrite a pause save', async () => {
@@ -911,6 +1112,18 @@ function getNavigationListener(): (
   return webNavigationMock.addListener.mock.calls[0][0] as (
     details: chrome.webNavigation.WebNavigationTransitionCallbackDetails
   ) => void;
+}
+
+function getHistoryStateNavigationListener(): (
+  details: chrome.webNavigation.WebNavigationTransitionCallbackDetails
+) => void {
+  return historyStateNavigationMock.addListener.mock.calls[0][0] as (
+    details: chrome.webNavigation.WebNavigationTransitionCallbackDetails
+  ) => void;
+}
+
+function getTabCreatedListener(): (tab: chrome.tabs.Tab) => void {
+  return tabsMock.onCreated.addListener.mock.calls[0][0] as (tab: chrome.tabs.Tab) => void;
 }
 
 function getRuntimeMessageListener(): (

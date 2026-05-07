@@ -40,6 +40,7 @@ export function createSearchSession(
     lastActivityAt: input.now,
     status: 'active',
     rootNodeId,
+    currentNodeId: rootNodeId,
     nodeIds: [rootNodeId],
     edgeIds: [],
     tabId: input.tabId
@@ -99,7 +100,8 @@ export function addPageVisit(
           ...data.sessions,
           [input.sessionId]: {
             ...session,
-            lastActivityAt: input.now
+            lastActivityAt: input.now,
+            currentNodeId: existingNodeId
           }
         },
         nodes: {
@@ -145,6 +147,7 @@ export function addPageVisit(
         [input.sessionId]: {
           ...session,
           lastActivityAt: input.now,
+          currentNodeId: nodeId,
           nodeIds: [...session.nodeIds, nodeId],
           edgeIds: [...session.edgeIds, edgeId]
         }
